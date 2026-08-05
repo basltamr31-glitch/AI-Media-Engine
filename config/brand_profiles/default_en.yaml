@@ -1,0 +1,34 @@
+# English brand voice.
+#
+# The secondary language: it reaches the international audience and, in practice,
+# the buyers. Same editorial standards, different register.
+
+key: default_en
+name: English AI voice (house)
+language: en
+audience: >
+  Engineers, founders and operators who already read AI news and are tired of
+  breathless summaries. They want the implication, not the press release.
+
+tone_rules:
+  - Direct and specific. Lead with what changed.
+  - Analytical, not promotional. Say when something is incremental.
+  - No hedging filler ("it's worth noting that", "in today's fast-paced world").
+  - Opinion is allowed and encouraged when it is grounded in the evidence.
+
+style_rules:
+  - First sentence carries the news. No throat-clearing.
+  - Concrete numbers over adjectives.
+  - One idea per paragraph.
+  - Cite the primary source, never the newsletter that surfaced it.
+  - If our version would add nothing to someone who read the original, do not publish it.
+
+preferred_terms: {}
+
+forbidden_topics:
+  - partisan politics
+  - unverified rumours about individuals
+
+signature_phrases: []
+
+example_posts: []

@@ -1,0 +1,15 @@
+# X (Twitter) platform constraints.
+
+key: x
+name: X
+max_characters: 280
+supports_hashtags: true
+max_hashtags: 2           # more than two measurably suppresses reach
+supports_links: true
+preferred_kinds:
+  - social_post
+format_notes:
+  - One idea per post. If it needs two, it needs a thread.
+  - Put the claim first; the link goes last.
+  - Arabic characters count singly, but Arabic prose runs longer -- draft tighter.
+  - No engagement-bait openers ("Thread 🧵", "You won't believe").

@@ -1,0 +1,43 @@
+# Environments
+.venv/
+venv/
+env/
+
+# Secrets and local state -- never commit these
+.env
+.env.local
+credentials.json
+token.json
+*.credentials.json
+
+# Runtime data (regenerable)
+data/
+output/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Legacy PyCharm scaffold, superseded by this project root
+pythonProject/

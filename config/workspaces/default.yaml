@@ -1,0 +1,78 @@
+# Workspace definition -- the tenant, its sources and its editorial policy.
+#
+# This file is the source of truth. `engine workspace seed` reconciles the
+# database with it, idempotently. Adding a customer later means adding a file
+# here, not writing code.
+
+slug: default
+name: AI Media Engine (house channel)
+timezone: Asia/Riyadh
+languages:
+  - ar
+  - en
+
+# Three sources from day one, deliberately. A single source means inheriting
+# someone else's editorial bias, always being a day late, and dying when they
+# change format. Three different *transports* also stress-test the adapter
+# abstraction properly rather than in theory.
+sources:
+  # Newsletter: a tip sheet. Tells us what to look at, never what to publish.
+  - kind: email
+    name: TLDR AI
+    identifier: dan@tldrnewsletter.com
+    parser_key: tldr_newsletter
+    trust_weight: 0.60
+    config:
+      strip_sections:
+        - sponsor
+        - advertisement
+        - together with
+
+  # Community signal: velocity and attention, legally unambiguous public API.
+  - kind: api
+    name: Hacker News (front page)
+    identifier: https://hn.algolia.com/api/v1/search?tags=front_page
+    parser_key: hackernews_api
+    trust_weight: 0.45
+    config:
+      min_points: 100
+
+  # Primary source by definition: research, straight from the authors.
+  - kind: rss
+    name: arXiv cs.AI
+    identifier: http://export.arxiv.org/rss/cs.AI
+    parser_key: arxiv_rss
+    trust_weight: 0.75
+    config:
+      max_items: 40
+
+editorial:
+  max_stories_per_run: 3
+  minimum_score: 0.35
+  recency_half_life_hours: 24
+  # Enforces "newsletters are tips, not text". Disabling this would turn the
+  # product into a republisher: a legal risk and a commodity.
+  require_primary_source: true
+  weights:
+    corroboration: 0.30
+    source_authority: 0.20
+    recency: 0.20
+    prominence: 0.15
+    audience_fit: 0.15
+  priority_topics:
+    - foundation models
+    - AI agents
+    - developer tooling
+    - AI policy and regulation
+    - applied AI in business
+  blocked_topics:
+    - crypto price speculation
+    - celebrity gossip
+
+brand_profiles:
+  - default_ar
+  - default_en
+
+meta:
+  strategy: media-first
+  notes: House channel. Customer workspaces are added as sibling files.

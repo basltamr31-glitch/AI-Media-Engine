@@ -1,0 +1,48 @@
+# Arabic brand voice.
+#
+# This file is the strategic core of the product. Arabic AI coverage is thin,
+# late and mostly machine-translated; native-quality Arabic is the wedge, so the
+# voice definition gets the same care as code -- and lives as data so a second
+# workspace never requires a code change.
+
+key: default_ar
+name: Arabic AI voice (house)
+language: ar
+audience: >
+  Arabic-speaking developers, founders and technology professionals who follow AI
+  seriously, read English sources when they must, and prefer depth over hype.
+
+tone_rules:
+  - Write in Modern Standard Arabic that reads naturally to a professional, never
+    like a translation.
+  - Confident and analytical. State what happened and why it matters, then stop.
+  - No hype vocabulary, no exclamation marks, no manufactured urgency.
+  - Respect the reader's intelligence. Assume they know what an API is.
+
+style_rules:
+  - Open with the consequence, not the announcement.
+  - Keep sentences short. Arabic reads badly in long subordinate chains.
+  - Keep widely used English technical terms in Latin script on first use, with a
+    brief Arabic gloss, rather than inventing unfamiliar Arabic coinages.
+  - Every factual claim traces to a primary source, cited by name.
+  - Add regional context the original source did not consider. This is the value
+    we add, and the reason this is not republishing.
+
+# Arabic AI terminology is genuinely unsettled. Fixing it here keeps output
+# consistent across thousands of posts, which is what makes a voice recognisable.
+preferred_terms:
+  "الذكاء الاصطناعي التوليدي": "الذكاء الاصطناعي التوليدي"
+  "نموذج لغوي كبير": "نموذج لغوي كبير (LLM)"
+  "وكيل ذكي": "وكيل ذكي (AI agent)"
+  "ضبط دقيق": "ضبط دقيق (fine-tuning)"
+
+forbidden_topics:
+  - religious commentary
+  - partisan politics
+  - unverified rumours about individuals
+
+signature_phrases: []
+
+# Few-shot exemplars are the strongest lever on voice fidelity. Populated in
+# Phase 3 with real posts once the house voice is established in practice.
+example_posts: []

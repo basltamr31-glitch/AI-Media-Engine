@@ -1,0 +1,35 @@
+; Machine-enforced architecture. Run with:  lint-imports
+;
+; This file is the reason the layering is real and not aspirational. A violation
+; fails the check, so the boundary that makes this codebase extractable into a
+; multi-tenant SaaS cannot silently rot.
+
+[importlinter]
+root_package = engine
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Layered architecture (dependencies point inward only)
+type = layers
+layers =
+    engine.cli
+    engine.pipeline
+    engine.adapters
+    engine.observability
+    engine.settings
+    engine.core
+
+[importlinter:contract:core-purity]
+name = Domain core is free of infrastructure
+type = forbidden
+source_modules =
+    engine.core
+forbidden_modules =
+    sqlalchemy
+    alembic
+    typer
+    rich
+    structlog
+    yaml
+    anthropic
+    httpx
