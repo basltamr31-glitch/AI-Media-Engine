@@ -39,6 +39,17 @@ class WorkspaceConfig(DomainModel):
 
     slug: str
     name: str
+    account: str | None = Field(
+        default=None,
+        description=(
+            "Owning account slug (ADR 0011). Defaults to the configured account. "
+            "An agency points 80 workspace files at one account slug."
+        ),
+    )
+    pack: str = Field(
+        default="ai-news",
+        description="Domain pack supplying taxonomy and vocabulary (ADR 0014).",
+    )
     timezone: str = "UTC"
     languages: list[Language] = Field(default_factory=lambda: [Language.AR, Language.EN])
     sources: list[SourceConfig] = Field(default_factory=list)

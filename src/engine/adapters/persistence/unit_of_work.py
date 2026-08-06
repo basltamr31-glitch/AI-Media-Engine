@@ -11,6 +11,11 @@ from types import TracebackType
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from engine.adapters.persistence.identity_repositories import (
+    SqlAlchemyAccountRepository,
+    SqlAlchemyActorRepository,
+    SqlAlchemySignalRepository,
+)
 from engine.adapters.persistence.repositories import (
     SqlAlchemyRunRepository,
     SqlAlchemySourceDocumentRepository,
@@ -35,10 +40,13 @@ class SqlAlchemyUnitOfWork:
     # Declared here rather than only assigned in __enter__, so the attributes
     # are part of the published interface and accessing one outside the context
     # manager is an obvious AttributeError rather than a mystery.
+    accounts: SqlAlchemyAccountRepository
+    actors: SqlAlchemyActorRepository
     workspaces: SqlAlchemyWorkspaceRepository
     sources: SqlAlchemySourceRepository
     documents: SqlAlchemySourceDocumentRepository
     runs: SqlAlchemyRunRepository
+    signals: SqlAlchemySignalRepository
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -46,10 +54,13 @@ class SqlAlchemyUnitOfWork:
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self._session = self._session_factory()
+        self.accounts = SqlAlchemyAccountRepository(self._session)
+        self.actors = SqlAlchemyActorRepository(self._session)
         self.workspaces = SqlAlchemyWorkspaceRepository(self._session)
         self.sources = SqlAlchemySourceRepository(self._session)
         self.documents = SqlAlchemySourceDocumentRepository(self._session)
         self.runs = SqlAlchemyRunRepository(self._session)
+        self.signals = SqlAlchemySignalRepository(self._session)
         return self
 
     def __exit__(

@@ -6,6 +6,10 @@
 
 slug: default
 name: AI Media Engine (house channel)
+
+# Domain pack: supplies the taxonomy and vocabulary. Swapping this line for
+# another pack changes what subject the engine is about, with no code change.
+pack: ai-news
 timezone: Asia/Riyadh
 languages:
   - ar

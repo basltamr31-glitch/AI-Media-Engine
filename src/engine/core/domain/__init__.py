@@ -12,8 +12,10 @@ from engine.core.domain.content import (
     BrandProfile,
     ChannelSpec,
     ContentAsset,
+    ContentRevision,
     PerformanceMetric,
     Publication,
+    RevisionOrigin,
 )
 from engine.core.domain.enums import (
     CONTENT_STATE_TRANSITIONS,
@@ -51,6 +53,7 @@ __all__ = [
     "ChannelSpec",
     "ContentAsset",
     "ContentKind",
+    "ContentRevision",
     "ContentState",
     "DomainModel",
     "EditorialPolicy",
@@ -63,6 +66,7 @@ __all__ = [
     "Language",
     "PerformanceMetric",
     "Publication",
+    "RevisionOrigin",
     "RunLedger",
     "RunStatus",
     "ScoringWeights",

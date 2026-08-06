@@ -94,6 +94,7 @@ Full instructions, including troubleshooting: [`docs/SETUP.md`](docs/SETUP.md).
 | `engine config show` | Show effective settings (secrets redacted) |
 | `engine db upgrade` / `downgrade` / `current` / `history` | Schema migrations |
 | `engine db revision -m "..."` | Generate a migration from model changes |
+| `engine pack list` / `show` / `validate` | Domain packs: taxonomy and vocabulary |
 | `engine workspace seed` | Reconcile the database with the workspace YAML |
 | `engine workspace list` / `sources` | Inspect tenants and their configured feeds |
 | `engine sources auth` / `logout` / `status` | Google OAuth and credential readiness |

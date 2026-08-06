@@ -37,7 +37,9 @@ class TestWorkspaceRepository:
             active.commit()
 
         with pytest.raises(IntegrityError), uow as active:
-            active.workspaces.add(Workspace(slug=workspace.slug, name="Duplicate"))
+            active.workspaces.add(
+                Workspace(account_id=workspace.account_id, slug=workspace.slug, name="Duplicate")
+            )
             active.commit()
 
     def test_update_of_missing_row_is_reported(

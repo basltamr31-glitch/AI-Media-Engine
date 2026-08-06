@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     # --- Paths -----------------------------------------------------------
     config_dir: Path = Path("config")
+    packs_dir: Path = Path("packs")
     data_dir: Path = Path("data")
     output_dir: Path = Path("output")
 
@@ -50,6 +51,8 @@ class Settings(BaseSettings):
     # Single-tenant in practice, multi-tenant in shape. Every query is already
     # scoped by workspace; this just selects which one the CLI acts on.
     default_workspace_slug: str = "default"
+    #: Account that owns workspaces which do not name one (ADR 0011).
+    default_account_slug: str = "default"
 
     # --- Ingestion (Phase 1) ---------------------------------------------
     #: OAuth *client* identity, downloaded from Google Cloud. Identifies the

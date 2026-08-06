@@ -10,21 +10,165 @@ domain shape.
 from __future__ import annotations
 
 from engine.adapters.persistence.models import (
+    AccountRow,
+    ActorRow,
+    MembershipRow,
     RunRow,
     RunStageRow,
+    SignalRow,
     SourceDocumentRow,
     SourceRow,
     WorkspaceRow,
 )
+from engine.core.domain.account import Account, Actor, Membership, Quota
 from engine.core.domain.enums import (
+    ActorKind,
     Language,
+    MembershipRole,
+    PlanTier,
     RunStatus,
+    SignalPolarity,
     SourceKind,
     StageStatus,
+    SubjectType,
 )
 from engine.core.domain.ledger import RunLedger, StageRecord, TokenUsage
+from engine.core.domain.signal import Signal
 from engine.core.domain.source import Source, SourceDocument
 from engine.core.domain.workspace import Workspace
+
+# --- Account, Actor, Membership ----------------------------------------------
+
+
+def account_to_row(account: Account) -> AccountRow:
+    return AccountRow(
+        id=account.id,
+        slug=account.slug,
+        name=account.name,
+        plan=account.plan.value,
+        quota=account.quota.model_dump(),
+        is_active=account.is_active,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+        meta=account.meta,
+    )
+
+
+def account_from_row(row: AccountRow) -> Account:
+    return Account(
+        id=row.id,
+        slug=row.slug,
+        name=row.name,
+        plan=PlanTier(row.plan),
+        quota=Quota(**row.quota) if row.quota else Quota(),
+        is_active=row.is_active,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        meta=dict(row.meta),
+    )
+
+
+def apply_account(row: AccountRow, account: Account) -> None:
+    row.slug = account.slug
+    row.name = account.name
+    row.plan = account.plan.value
+    row.quota = account.quota.model_dump()
+    row.is_active = account.is_active
+    row.updated_at = account.updated_at
+    row.meta = account.meta
+
+
+def actor_to_row(actor: Actor) -> ActorRow:
+    return ActorRow(
+        id=actor.id,
+        account_id=actor.account_id,
+        key=actor.key,
+        display_name=actor.display_name,
+        kind=actor.kind.value,
+        email=actor.email,
+        is_active=actor.is_active,
+        created_at=actor.created_at,
+        meta=actor.meta,
+    )
+
+
+def actor_from_row(row: ActorRow) -> Actor:
+    return Actor(
+        id=row.id,
+        account_id=row.account_id,
+        key=row.key,
+        display_name=row.display_name,
+        kind=ActorKind(row.kind),
+        email=row.email,
+        is_active=row.is_active,
+        created_at=row.created_at,
+        meta=dict(row.meta),
+    )
+
+
+def membership_to_row(membership: Membership) -> MembershipRow:
+    return MembershipRow(
+        id=membership.id,
+        account_id=membership.account_id,
+        actor_id=membership.actor_id,
+        role=membership.role.value,
+        created_at=membership.created_at,
+    )
+
+
+def membership_from_row(row: MembershipRow) -> Membership:
+    return Membership(
+        id=row.id,
+        account_id=row.account_id,
+        actor_id=row.actor_id,
+        role=MembershipRole(row.role),
+        created_at=row.created_at,
+    )
+
+
+# --- Signal ------------------------------------------------------------------
+#
+# No `apply_signal`. Signals are append-only (ADR 0012); the absence of an update
+# mapper is the enforcement mechanism, not an oversight.
+
+
+def signal_to_row(signal: Signal) -> SignalRow:
+    return SignalRow(
+        id=signal.id,
+        account_id=signal.account_id,
+        workspace_id=signal.workspace_id,
+        actor_id=signal.actor_id,
+        subject_type=signal.subject_type.value,
+        subject_id=signal.subject_id,
+        signal_type=signal.signal_type,
+        polarity=signal.polarity.value,
+        value=signal.value,
+        label=signal.label,
+        context=signal.context,
+        run_id=signal.run_id,
+        occurred_at=signal.occurred_at,
+        recorded_at=signal.recorded_at,
+    )
+
+
+def signal_from_row(row: SignalRow) -> Signal:
+    return Signal(
+        id=row.id,
+        account_id=row.account_id,
+        workspace_id=row.workspace_id,
+        actor_id=row.actor_id,
+        subject_type=SubjectType(row.subject_type),
+        subject_id=row.subject_id,
+        signal_type=row.signal_type,
+        polarity=SignalPolarity(row.polarity),
+        value=row.value,
+        label=row.label,
+        context=dict(row.context),
+        run_id=row.run_id,
+        occurred_at=row.occurred_at,
+        recorded_at=row.recorded_at,
+    )
+
 
 # --- Workspace ---------------------------------------------------------------
 
@@ -32,8 +176,10 @@ from engine.core.domain.workspace import Workspace
 def workspace_to_row(workspace: Workspace) -> WorkspaceRow:
     return WorkspaceRow(
         id=workspace.id,
+        account_id=workspace.account_id,
         slug=workspace.slug,
         name=workspace.name,
+        pack_key=workspace.pack_key,
         timezone=workspace.timezone,
         languages=[language.value for language in workspace.languages],
         is_active=workspace.is_active,
@@ -46,8 +192,10 @@ def workspace_to_row(workspace: Workspace) -> WorkspaceRow:
 def workspace_from_row(row: WorkspaceRow) -> Workspace:
     return Workspace(
         id=row.id,
+        account_id=row.account_id,
         slug=row.slug,
         name=row.name,
+        pack_key=row.pack_key,
         timezone=row.timezone,
         languages=[Language(value) for value in row.languages],
         is_active=row.is_active,

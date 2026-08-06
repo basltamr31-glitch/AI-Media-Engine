@@ -1,0 +1,79 @@
+# AI News domain pack.
+#
+# This file is what makes the engine an *AI news* engine. Nothing in
+# src/engine/ knows what a foundation model is. Swapping this pack for
+# packs/cybersecurity/ would make it a threat-intelligence engine, with no
+# code change.
+#
+# Sections are added as the milestones that consume them land:
+#   taxonomy  -- here now; Phase 2 classifies against it
+#   channels  -- milestone 1.5.5
+#   signals   -- milestone 1.5.6
+
+key: ai-news
+version: 1
+name: AI News
+description: >-
+  Artificial intelligence: model releases, research, tooling, funding and
+  policy. Aimed at practitioners and technically literate business readers.
+
+# Two levels, deliberately. A taxonomy deep enough to need a third level has
+# usually become a tagging system, and tags belong on entities.
+taxonomy:
+  - key: model_release
+    label: Model release
+    description: >-
+      A new model, a new version, or a material capability change to an
+      existing one. Includes deprecations and pricing changes.
+
+  - key: research
+    label: Research
+    description: >-
+      Papers, benchmarks and technical results. Usually arXiv or a lab blog.
+
+  - key: benchmarks
+    label: Benchmarks and evaluation
+    parent: research
+    description: New evaluation suites, leaderboard movements, eval methodology.
+
+  - key: product
+    label: Product and applications
+    description: >-
+      Applied AI shipping to users: features, integrations, launches.
+
+  - key: tooling
+    label: Developer tooling
+    description: >-
+      Libraries, frameworks, inference servers, agent frameworks, SDKs.
+
+  - key: infrastructure
+    label: Infrastructure and compute
+    description: Chips, data centres, serving stacks, training infrastructure.
+
+  - key: funding
+    label: Funding and business
+    description: >-
+      Raises, acquisitions, revenue disclosures, partnerships, shutdowns.
+
+  - key: policy
+    label: Policy and regulation
+    description: >-
+      Legislation, enforcement, standards bodies, court rulings, safety policy.
+
+  - key: safety
+    label: Safety and alignment
+    parent: policy
+    description: >-
+      Alignment research, incidents, model behaviour findings, red-teaming.
+
+  - key: other
+    label: Other
+    description: >-
+      Relevant but outside the categories above. A persistently large "other"
+      bucket is a signal that the taxonomy needs a new category.
+
+meta:
+  maintainer: house
+  notes: >-
+    First pack, and the reference example. Keep the taxonomy small: categories
+    exist to inform ranking and routing, not to describe the world exhaustively.

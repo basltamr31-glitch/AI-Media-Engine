@@ -24,7 +24,22 @@ class Workspace(DomainModel):
     """An isolated tenant: its own sources, policies, brand voices and content."""
 
     id: str = Field(default_factory=lambda: new_id(IdPrefix.WORKSPACE))
+    account_id: str = Field(
+        description=(
+            "Owning account (ADR 0011). A workspace is an editorial context; the "
+            "account is the commercial one. An agency's 80 brands are 80 "
+            "workspaces under a single account."
+        )
+    )
     slug: str = Field(description="URL-safe stable key, unique across the install")
+    pack_key: str = Field(
+        default="ai-news",
+        description=(
+            "Active domain pack (ADR 0014). Supplies taxonomy and, from later "
+            "milestones, channels and ranking signals. Changing it changes what "
+            "subject the engine is about, with no code change."
+        ),
+    )
     name: str
     timezone: str = Field(
         default="UTC",

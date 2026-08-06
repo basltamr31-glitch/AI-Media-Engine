@@ -30,6 +30,11 @@ _ULID_LENGTH: Final = _TIME_CHARS + _RANDOM_CHARS
 class IdPrefix:
     """Canonical entity prefixes. Values are stable and must never be reused."""
 
+    ACCOUNT: Final = "acc"
+    ACTOR: Final = "act"
+    MEMBERSHIP: Final = "mbr"
+    SIGNAL: Final = "sig"
+    REVISION: Final = "rev"
     WORKSPACE: Final = "ws"
     SOURCE: Final = "src"
     DOCUMENT: Final = "doc"

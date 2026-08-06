@@ -13,6 +13,7 @@ Two decisions are encoded here and both are monetisation-critical:
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import Field, field_validator, model_validator
@@ -83,8 +84,57 @@ class ChannelSpec(DomainModel):
         return self
 
 
+class RevisionOrigin(StrEnum):
+    """How a revision came to exist."""
+
+    GENERATED = "generated"  # written by a model
+    EDITED = "edited"  # changed by a human
+    RESTORED = "restored"  # an earlier revision reinstated
+
+
+class ContentRevision(ImmutableModel):
+    """One version of a content asset's text. Immutable (ADR 0013).
+
+    Editing appends a revision; it never overwrites one. The reason is narrow
+    and commercial: the difference between the ``generated`` revision and the
+    ``edited`` one that actually got published is a labelled preference pair in
+    the customer's own voice, produced as a by-product of work they were doing
+    anyway. Overwriting ``body`` would discard it silently and permanently.
+
+    Restoring an earlier version appends a ``restored`` revision rather than
+    moving a pointer backwards, so the history reads as what actually happened.
+    """
+
+    id: str = Field(default_factory=lambda: new_id(IdPrefix.REVISION))
+    workspace_id: str
+    asset_id: str
+    revision_number: int = Field(ge=1, description="Monotonic within one asset.")
+    body: str
+    origin: RevisionOrigin
+    actor_id: str = Field(
+        description="Who produced it. Model output is attributed to the system actor."
+    )
+    parent_revision_id: str | None = Field(
+        default=None,
+        description="What this was derived from. None for the first revision.",
+    )
+    prompt_version: str | None = Field(
+        default=None,
+        description=(
+            "Which prompt produced a generated revision. Without it, a style "
+            "regression after a prompt change cannot be attributed."
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
 class ContentAsset(TenantScoped):
-    """One generated artifact for one story, channel, language and kind."""
+    """One generated artifact for one story, channel, language and kind.
+
+    Holds identity and workflow state. The **text lives in the revision chain**,
+    not here, which is what preserves the draft-versus-published difference.
+    """
 
     id: str = Field(default_factory=lambda: new_id(IdPrefix.ASSET))
     story_id: str
@@ -96,12 +146,17 @@ class ContentAsset(TenantScoped):
     )
     language: Language
     brand_profile_key: str
-    body: str
+    current_revision_id: str | None = Field(
+        default=None,
+        description=(
+            "Pointer to the live revision, so reading current content stays a "
+            "single indexed lookup rather than a scan of the chain."
+        ),
+    )
     state: ContentState = ContentState.DRAFT
-    version: int = Field(default=1, ge=1)
     variant: str = Field(
         default="a",
-        description="Variant label for A/B testing within a version.",
+        description="Variant label for A/B testing.",
     )
     evidence_ids: list[str] = Field(
         default_factory=list,
@@ -111,6 +166,32 @@ class ContentAsset(TenantScoped):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     meta: dict[str, Any] = Field(default_factory=dict)
+
+    def next_revision(
+        self,
+        body: str,
+        *,
+        origin: RevisionOrigin,
+        actor_id: str,
+        previous: ContentRevision | None = None,
+        prompt_version: str | None = None,
+    ) -> ContentRevision:
+        """Build the next revision in the chain.
+
+        Returns the revision without persisting it or advancing
+        ``current_revision_id``: the caller owns the transaction, and the
+        pointer must only move once the revision is durable.
+        """
+        return ContentRevision(
+            workspace_id=self.workspace_id,
+            asset_id=self.id,
+            revision_number=1 if previous is None else previous.revision_number + 1,
+            body=body,
+            origin=origin,
+            actor_id=actor_id,
+            parent_revision_id=None if previous is None else previous.id,
+            prompt_version=prompt_version,
+        )
 
     def transition_to(self, target: ContentState, *, notes: str | None = None) -> None:
         """Move through the review workflow, rejecting illegal transitions.

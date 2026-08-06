@@ -15,9 +15,61 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Protocol, runtime_checkable
 
+from engine.core.domain.account import Account, Actor, Membership
+from engine.core.domain.enums import SubjectType
 from engine.core.domain.ledger import RunLedger, StageRecord
+from engine.core.domain.signal import Signal
 from engine.core.domain.source import Source, SourceDocument
 from engine.core.domain.workspace import Workspace
+
+
+@runtime_checkable
+class AccountRepository(Protocol):
+    def add(self, account: Account) -> Account: ...
+
+    def get(self, account_id: str) -> Account | None: ...
+
+    def get_by_slug(self, slug: str) -> Account | None: ...
+
+    def list_all(self, *, include_inactive: bool = False) -> list[Account]: ...
+
+    def update(self, account: Account) -> Account: ...
+
+
+@runtime_checkable
+class ActorRepository(Protocol):
+    def add(self, actor: Actor) -> Actor: ...
+
+    def get(self, account_id: str, actor_id: str) -> Actor | None: ...
+
+    def get_by_key(self, account_id: str, key: str) -> Actor | None: ...
+
+    def list_for_account(self, account_id: str, *, only_active: bool = True) -> list[Actor]: ...
+
+    def add_membership(self, membership: Membership) -> Membership: ...
+
+    def list_memberships(self, account_id: str) -> list[Membership]: ...
+
+
+@runtime_checkable
+class SignalRepository(Protocol):
+    """Append-only. No update or delete method exists, by design (ADR 0012)."""
+
+    def emit(self, signal: Signal) -> Signal: ...
+
+    def emit_many(self, signals: list[Signal]) -> int: ...
+
+    def for_subject(
+        self, workspace_id: str, subject_type: SubjectType, subject_id: str
+    ) -> list[Signal]: ...
+
+    def by_type(
+        self, workspace_id: str, signal_type: str, *, limit: int = 1000
+    ) -> list[Signal]: ...
+
+    def count_by_type(self, workspace_id: str) -> dict[str, int]: ...
+
+    def count_for_run(self, workspace_id: str, run_id: str) -> int: ...
 
 
 @runtime_checkable
@@ -101,6 +153,12 @@ class UnitOfWork(Protocol):
     """
 
     @property
+    def accounts(self) -> AccountRepository: ...
+
+    @property
+    def actors(self) -> ActorRepository: ...
+
+    @property
     def workspaces(self) -> WorkspaceRepository: ...
 
     @property
@@ -111,6 +169,9 @@ class UnitOfWork(Protocol):
 
     @property
     def runs(self) -> RunRepository: ...
+
+    @property
+    def signals(self) -> SignalRepository: ...
 
     def __enter__(self) -> UnitOfWork: ...
 

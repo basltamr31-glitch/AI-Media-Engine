@@ -19,7 +19,8 @@ from engine.adapters.clock import FixedClock
 from engine.adapters.persistence.models import Base
 from engine.adapters.persistence.session import create_db_engine, create_session_factory
 from engine.adapters.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from engine.core.domain.enums import Language, SourceKind
+from engine.core.domain.account import Account, Actor
+from engine.core.domain.enums import ActorKind, Language, SourceKind
 from engine.core.domain.source import Source
 from engine.core.domain.workspace import Workspace
 from engine.settings import Settings
@@ -62,8 +63,37 @@ def clock() -> FixedClock:
 
 
 @pytest.fixture
-def workspace() -> Workspace:
+def account() -> Account:
+    return Account(slug="test-account", name="Test Account")
+
+
+@pytest.fixture
+def persisted_account(uow: SqlAlchemyUnitOfWork, account: Account) -> Account:
+    with uow as active:
+        active.accounts.add(account)
+        active.commit()
+    return account
+
+
+@pytest.fixture
+def system_actor(uow: SqlAlchemyUnitOfWork, persisted_account: Account) -> Actor:
+    """Every account has one; automated actions are attributed to it."""
+    actor = Actor(
+        account_id=persisted_account.id,
+        key="system",
+        display_name="System",
+        kind=ActorKind.SYSTEM,
+    )
+    with uow as active:
+        active.actors.add(actor)
+        active.commit()
+    return actor
+
+
+@pytest.fixture
+def workspace(persisted_account: Account) -> Workspace:
     return Workspace(
+        account_id=persisted_account.id,
         slug="test-workspace",
         name="Test Workspace",
         timezone="Asia/Riyadh",

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from engine.adapters.clock import SystemClock
 from engine.adapters.config.policy_loader import PolicyLoader
 from engine.adapters.http import HttpxClient
+from engine.adapters.packs.loader import FilesystemPackLoader
 from engine.adapters.persistence.session import create_db_engine, create_session_factory
 from engine.adapters.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from engine.adapters.sources.archive import FileSystemRawArchive, NullRawArchive
@@ -31,6 +32,7 @@ from engine.adapters.sources.registry import FetcherRegistry, ParserRegistry
 from engine.adapters.sources.rss import RssFetcher
 from engine.core.ports.clock import Clock
 from engine.core.ports.http import HttpClient
+from engine.core.ports.packs import PackLoader
 from engine.core.ports.sources import RawDocumentArchive
 from engine.observability.logging import configure_logging
 from engine.settings import Settings, get_settings
@@ -81,6 +83,10 @@ class Container:
     @cached_property
     def policy_loader(self) -> PolicyLoader:
         return PolicyLoader(self.resolve_path(self.settings.config_dir))
+
+    @cached_property
+    def packs(self) -> PackLoader:
+        return FilesystemPackLoader(self.resolve_path(self.settings.packs_dir))
 
     @cached_property
     def http(self) -> HttpClient:

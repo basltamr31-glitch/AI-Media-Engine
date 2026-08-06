@@ -12,10 +12,49 @@ from typing import Final
 
 
 class Language(StrEnum):
-    """Output languages. Arabic is the strategic wedge, not an afterthought."""
+    """Output languages. Arabic is the strategic wedge, not an afterthought.
+
+    .. deprecated:: Phase 1.5
+        Superseded by validated BCP-47 language tags (ADR 0015). A closed enum
+        cannot express a German finance customer without a migration. Retained
+        until milestone 1.5.5 migrates the call sites.
+    """
 
     AR = "ar"
     EN = "en"
+
+
+class PlanTier(StrEnum):
+    """Commercial tier of an account.
+
+    Engine-controlled and genuinely closed -- tiers select engine behaviour
+    (quota enforcement, feature gates), unlike channels or products which
+    enumerate a market we do not control. See ADR 0015 for the distinction.
+    """
+
+    FREE = "free"
+    STARTER = "starter"
+    PROFESSIONAL = "professional"
+    AGENCY = "agency"
+    ENTERPRISE = "enterprise"
+
+
+class ActorKind(StrEnum):
+    """What kind of thing took an action."""
+
+    HUMAN = "human"
+    SYSTEM = "system"  # the pipeline acting unattended
+    SCHEDULER = "scheduler"
+    API_CLIENT = "api_client"
+
+
+class MembershipRole(StrEnum):
+    """An actor's role within an account."""
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    EDITOR = "editor"
+    VIEWER = "viewer"
 
 
 class Channel(StrEnum):
@@ -87,6 +126,33 @@ class ContentState(StrEnum):
     REJECTED = "rejected"
     PUBLISHED = "published"
     ARCHIVED = "archived"
+
+
+class SubjectType(StrEnum):
+    """What a signal is about.
+
+    Engine-controlled: these are the entities the pipeline itself manipulates,
+    so the set closes with the engine rather than with the market.
+    """
+
+    STORY = "story"
+    STORY_CANDIDATE = "story_candidate"
+    CONTENT_ASSET = "content_asset"
+    PUBLICATION = "publication"
+    SOURCE = "source"
+    DOCUMENT = "document"
+
+
+class SignalPolarity(StrEnum):
+    """Whether a signal is evidence for or against its subject.
+
+    Lets a learner consume a signal type it has never seen -- including one
+    defined by a third-party domain pack -- without knowing its semantics.
+    """
+
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    NEUTRAL = "neutral"
 
 
 class RunStatus(StrEnum):

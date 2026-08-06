@@ -62,14 +62,84 @@ class Base(DeclarativeBase):
     }
 
 
+class AccountRow(Base):
+    """Billing and quota root. Owns many workspaces (ADR 0011)."""
+
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    plan: Mapped[str] = mapped_column(String(32), nullable=False, default="free")
+    quota: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    __table_args__ = (UniqueConstraint("slug", name="uq_accounts_slug"),)
+
+
+class ActorRow(Base):
+    """Whoever -- or whatever -- took an action.
+
+    Account-scoped, not global: the same person working for two agencies is two
+    actors, because preference learning is per-actor per-account.
+    """
+
+    __tablename__ = "actors"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="human")
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "key", name="uq_actors_account_id_key"),
+        Index("ix_actors_account_id", "account_id"),
+    )
+
+
+class MembershipRow(Base):
+    """Links an actor to an account with a role."""
+
+    __tablename__ = "memberships"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("actors.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="editor")
+    created_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "actor_id", name="uq_memberships_account_id_actor_id"),
+        Index("ix_memberships_actor_id", "actor_id"),
+    )
+
+
 class WorkspaceRow(Base):
     """Tenant root."""
 
     __tablename__ = "workspaces"
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    pack_key: Mapped[str] = mapped_column(String(64), nullable=False, default="ai-news")
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
     languages: Mapped[list[str]] = mapped_column(nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -77,7 +147,66 @@ class WorkspaceRow(Base):
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
     meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
 
-    __table_args__ = (UniqueConstraint("slug", name="uq_workspaces_slug"),)
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_workspaces_slug"),
+        Index("ix_workspaces_account_id", "account_id"),
+    )
+
+
+class SignalRow(Base):
+    """Append-only feedback log (ADR 0012).
+
+    No update path exists by design: a correction is a new row. This table is
+    both the training set for every learning loop and the audit trail, and
+    neither is trustworthy if rows can be rewritten.
+
+    ``account_id`` is denormalised rather than joined through the workspace,
+    because quota, metering and cross-brand analytics all query by account and
+    this is the highest-volume table in the system.
+    """
+
+    __tablename__ = "signals"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+
+    subject_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+
+    signal_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    polarity: Mapped[str] = mapped_column(String(16), nullable=False, default="neutral")
+
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    context: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    run_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+
+    occurred_at: Mapped[datetime] = mapped_column(nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        # "Everything that happened to this subject" -- the dominant read.
+        Index(
+            "ix_signals_workspace_id_subject_type_subject_id",
+            "workspace_id",
+            "subject_type",
+            "subject_id",
+        ),
+        # Learning queries pull one signal type across a time range.
+        Index(
+            "ix_signals_workspace_id_signal_type_occurred_at",
+            "workspace_id",
+            "signal_type",
+            "occurred_at",
+        ),
+        Index("ix_signals_account_id_occurred_at", "account_id", "occurred_at"),
+        Index("ix_signals_run_id", "run_id"),
+    )
 
 
 class SourceRow(Base):

@@ -26,16 +26,22 @@ from engine.core.domain.workspace import Workspace
 
 class TestWorkspace:
     def test_slug_is_normalised(self):
-        assert Workspace(slug="  Default-Tenant  ", name="X").slug == "default-tenant"
+        workspace = Workspace(account_id="acc_x", slug="  Default-Tenant  ", name="X")
+        assert workspace.slug == "default-tenant"
 
     @pytest.mark.parametrize("slug", ["ab", "-leading", "trailing-", "has space", "UPPER!"])
     def test_invalid_slugs_are_rejected(self, slug: str):
         with pytest.raises(ValidationError):
-            Workspace(slug=slug, name="X")
+            Workspace(account_id="acc_x", slug=slug, name="X")
 
     def test_duplicate_languages_are_rejected(self):
         with pytest.raises(ValidationError):
-            Workspace(slug="valid-slug", name="X", languages=[Language.AR, Language.AR])
+            Workspace(
+                account_id="acc_x",
+                slug="valid-slug",
+                name="X",
+                languages=[Language.AR, Language.AR],
+            )
 
 
 class TestEvidence:
@@ -102,7 +108,6 @@ class TestContentStateMachine:
             channel=Channel.LINKEDIN,
             language=Language.EN,
             brand_profile_key="default_en",
-            body="A post.",
         )
         asset.transition_to(ContentState.IN_REVIEW)
         asset.transition_to(ContentState.APPROVED, notes="looks good")
@@ -120,7 +125,6 @@ class TestContentStateMachine:
             channel=Channel.X,
             language=Language.AR,
             brand_profile_key="default_ar",
-            body="منشور.",
         )
         with pytest.raises(ValueError, match="illegal content transition"):
             asset.transition_to(ContentState.PUBLISHED)

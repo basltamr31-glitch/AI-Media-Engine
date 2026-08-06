@@ -16,8 +16,10 @@ from rich.table import Table
 from engine.adapters.config.policy_loader import PolicyLoadError
 from engine.adapters.config.schema import WorkspaceConfig
 from engine.cli.container import Container, build_container
+from engine.cli.provisioning import ensure_account
 from engine.core.domain.source import Source
 from engine.core.domain.workspace import Workspace
+from engine.core.ports.packs import PackLoadError, PackNotFoundError
 
 console = Console()
 app = typer.Typer(help="Workspace (tenant) management.")
@@ -123,12 +125,27 @@ def seed(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
+    # Fail before touching the database: a workspace pointing at a missing or
+    # broken pack would seed cleanly and then fail at classification time.
+    try:
+        pack = container.packs.load(config.pack)
+    except (PackNotFoundError, PackLoadError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
     with container.unit_of_work() as uow:
+        account, _ = ensure_account(
+            uow,
+            slug=config.account or container.settings.default_account_slug,
+            clock=container.clock,
+        )
         workspace = uow.workspaces.get_by_slug(config.slug)
         if workspace is None:
             workspace = Workspace(
+                account_id=account.id,
                 slug=config.slug,
                 name=config.name,
+                pack_key=pack.key,
                 timezone=config.timezone,
                 languages=config.languages,
                 meta=config.meta,
@@ -137,6 +154,7 @@ def seed(
             action = "created"
         else:
             workspace.name = config.name
+            workspace.pack_key = pack.key
             workspace.timezone = config.timezone
             workspace.languages = config.languages
             workspace.meta = config.meta
@@ -148,6 +166,7 @@ def seed(
     created, updated, deactivated = _sync_sources(container, workspace, config)
 
     console.print(f"[green]Workspace {action}:[/green] {workspace.slug} ({workspace.id})")
+    console.print(f"Domain pack: [cyan]{pack.identifier}[/cyan] ({len(pack.taxonomy)} categories)")
     console.print(
         f"Sources: [cyan]{created}[/cyan] created, [cyan]{updated}[/cyan] updated, "
         f"[cyan]{deactivated}[/cyan] deactivated"
