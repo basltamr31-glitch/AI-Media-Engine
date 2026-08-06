@@ -29,22 +29,87 @@ sources:
         - together with
 
   # Community signal: velocity and attention, legally unambiguous public API.
+  #
+  # Note the shape of `config` below. The JSON fetcher knows nothing about
+  # Hacker News -- `items_path` tells it where the array lives, `field_map`
+  # tells it which keys to read, `filters` tells it what to discard. Adding
+  # any other JSON source is the same four keys with different values.
   - kind: api
     name: Hacker News (front page)
-    identifier: https://hn.algolia.com/api/v1/search?tags=front_page
+    identifier: https://hn.algolia.com/api/v1/search
     parser_key: hackernews_api
     trust_weight: 0.45
     config:
-      min_points: 100
+      items_path: hits
+      max_items: 50
+      request:
+        params:
+          tags: front_page
+          hitsPerPage: 50
+      field_map:
+        external_id: objectID
+        title: title
+        url: url
+        author: author
+        published_at: created_at
+        summary: story_text
+      filters:
+        # Attention floor. Below this, a front-page slot is noise.
+        min:
+          points: 100
+        require:
+          - title
 
   # Primary source by definition: research, straight from the authors.
   - kind: rss
     name: arXiv cs.AI
-    identifier: http://export.arxiv.org/rss/cs.AI
+    identifier: https://export.arxiv.org/rss/cs.AI
     parser_key: arxiv_rss
     trust_weight: 0.75
     config:
       max_items: 40
+
+# ---------------------------------------------------------------------------
+# Adding more sources is configuration, not code. Both examples below work
+# today with the existing JSON fetcher -- uncomment, adjust, `engine workspace
+# seed`, done. No new class, no pipeline change, no deployment.
+#
+#  - kind: api
+#    name: r/MachineLearning
+#    identifier: https://www.reddit.com/r/MachineLearning/top.json
+#    parser_key: reddit_api
+#    trust_weight: 0.40
+#    config:
+#      items_path: data.children      # Reddit wraps items twice
+#      request:
+#        params: {t: day, limit: 50}
+#      field_map:
+#        external_id: data.id
+#        title: data.title
+#        url: data.url
+#        author: data.author
+#        published_at: data.created_utc   # epoch seconds, parsed transparently
+#        summary: data.selftext
+#      filters:
+#        min: {data.score: 50}
+#
+#  - kind: api
+#    name: vLLM releases
+#    identifier: https://api.github.com/repos/vllm-project/vllm/releases
+#    parser_key: github_releases
+#    trust_weight: 0.80
+#    config:
+#      items_path: ""                 # the payload IS the array
+#      field_map:
+#        external_id: id
+#        title: name
+#        url: html_url
+#        author: author.login
+#        published_at: published_at
+#        summary: body
+#      filters:
+#        exclude_true: [draft, prerelease]
+# ---------------------------------------------------------------------------
 
 editorial:
   max_stories_per_run: 3

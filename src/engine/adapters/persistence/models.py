@@ -100,11 +100,19 @@ class SourceRow(Base):
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
     __table_args__ = (
-        # One logical feed per workspace, so re-seeding config is idempotent.
-        UniqueConstraint(
-            "workspace_id", "kind", "identifier", name="uq_sources_workspace_id_kind_identifier"
-        ),
+        # The NAME is the natural key within a workspace, not the identifier.
+        #
+        # Two reasons, both learned the hard way in Phase 1:
+        #  1. An identifier is a mutable property of a source (arXiv moved from
+        #     http to https). Keying on it forks a second source on any URL
+        #     change and orphans the original's ingestion history.
+        #  2. The same endpoint legitimately appears twice under different
+        #     names -- one GitHub releases URL filtered two ways, one HN query
+        #     at two attention thresholds. Uniqueness on identifier forbids it.
+        UniqueConstraint("workspace_id", "name", name="uq_sources_workspace_id_name"),
         Index("ix_sources_workspace_id", "workspace_id"),
+        # Non-unique: still worth indexing for lookups, no longer a constraint.
+        Index("ix_sources_workspace_id_identifier", "workspace_id", "identifier"),
     )
 
 

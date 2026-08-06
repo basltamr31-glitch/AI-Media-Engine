@@ -51,6 +51,27 @@ class Settings(BaseSettings):
     # scoped by workspace; this just selects which one the CLI acts on.
     default_workspace_slug: str = "default"
 
+    # --- Ingestion (Phase 1) ---------------------------------------------
+    #: OAuth *client* identity, downloaded from Google Cloud. Identifies the
+    #: application, not the user. Created manually, never by the code.
+    google_credentials_file: Path = Path("credentials.json")
+    #: Cached user tokens, written by `engine sources auth`. Delete to re-consent.
+    google_token_file: Path = Path("token.json")
+
+    #: Per-source ceiling on documents fetched in one run. A safety valve
+    #: against a misconfigured query pulling an entire inbox.
+    ingest_max_documents: int = Field(default=50, gt=0, le=500)
+    #: How far back to look on each run. Generous enough to survive a few days
+    #: of downtime without manual intervention.
+    ingest_lookback_days: int = Field(default=7, gt=0, le=365)
+    #: Archiving raw payloads costs disk and buys replay, fixtures and provenance.
+    ingest_archive_raw: bool = True
+
+    http_timeout_seconds: float = Field(default=30.0, gt=0)
+    #: Identifying ourselves honestly is both etiquette and self-interest: an
+    #: anonymous scraper is the first thing a publisher blocks.
+    http_user_agent: str = "ai-media-engine/0.1 (+https://github.com/; contact via repo)"
+
     # --- LLM (Phase 3) ---------------------------------------------------
     anthropic_api_key: SecretStr | None = None
     generation_model: str = "claude-opus-5"
@@ -74,6 +95,15 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def raw_archive_dir(self) -> Path:
+        """Where verbatim fetched payloads are kept.
+
+        Under ``data/`` rather than ``output/``: this is machine-local input we
+        may need to replay, not a deliverable.
+        """
+        return self.data_dir / "raw"
 
     def ensure_directories(self) -> None:
         """Create the writable directories the engine expects.

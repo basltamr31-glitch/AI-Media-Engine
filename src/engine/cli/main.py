@@ -12,7 +12,7 @@ import typer
 from rich.console import Console
 
 from engine import __version__
-from engine.cli.commands import db, diagnostics, pipeline, workspace
+from engine.cli.commands import db, diagnostics, ingest, pipeline, sources, workspace
 
 console = Console()
 
@@ -25,6 +25,8 @@ app = typer.Typer(
 
 app.add_typer(db.app, name="db")
 app.add_typer(workspace.app, name="workspace")
+app.add_typer(sources.app, name="sources")
+app.add_typer(ingest.app, name="ingest")
 app.add_typer(pipeline.app, name="pipeline")
 app.add_typer(diagnostics.app, name="config", help="Configuration inspection.")
 

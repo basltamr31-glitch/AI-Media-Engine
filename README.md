@@ -25,19 +25,21 @@ provenance, and a closed feedback loop from published content back into ranking.
 
 ---
 
-## Status: Phase 0 complete
+## Status: Phase 1 complete
 
-Phase 0 is the foundation: domain model, persistence, migrations, configuration,
+Phase 0 built the spine: domain model, persistence, migrations, configuration,
 pipeline orchestration, observability, CLI, tests and architectural enforcement.
-No ingestion, no LLM calls, no generation yet — those are Phases 1–5.
 
-The system runs end to end today with zero stages registered, which proves the
-spine works before any business logic can hide a defect in it.
+Phase 1 makes it ingest. Gmail newsletters, RSS/Atom feeds and JSON APIs are
+fetched, deduplicated by content hash, archived verbatim and stored as
+`SourceDocument` records — idempotently, with per-source fault isolation.
+
+No parsing, no LLM calls, no generation yet — those are Phases 2–5.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | **0** | Foundation: domain, storage, pipeline spine, CLI, tests | ✅ Complete |
-| 1 | Ingestion: Gmail, RSS, HTTP APIs → `SourceDocument` | Pending approval |
+| **1** | Ingestion: Gmail, RSS, JSON APIs → `SourceDocument` | ✅ Complete |
 | 2 | Extraction, story resolution, primary-source enrichment | Not started |
 | 3 | Editorial scoring, LLM generation, brand voice | Not started |
 | 4 | Rendering: Markdown + JSON output | Not started |
@@ -64,11 +66,19 @@ engine workspace seed            # load config/workspaces/default.yaml
 engine doctor                    # verify the environment
 ```
 
-Then:
+Then ingest. RSS and the JSON APIs work immediately with no credentials:
 
 ```bash
-engine pipeline run --smoke      # end-to-end run with a no-op stage
+engine ingest run                # fetch from every active source
+engine ingest run                # again: stores nothing new (idempotent)
+engine ingest status             # per-source document counts
 engine pipeline runs             # run history with duration and cost
+```
+
+To include Gmail newsletters, authorise once (see [`docs/INGESTION.md`](docs/INGESTION.md)):
+
+```bash
+engine sources auth              # opens a browser for Google consent
 ```
 
 Full instructions, including troubleshooting: [`docs/SETUP.md`](docs/SETUP.md).
@@ -86,6 +96,9 @@ Full instructions, including troubleshooting: [`docs/SETUP.md`](docs/SETUP.md).
 | `engine db revision -m "..."` | Generate a migration from model changes |
 | `engine workspace seed` | Reconcile the database with the workspace YAML |
 | `engine workspace list` / `sources` | Inspect tenants and their configured feeds |
+| `engine sources auth` / `logout` / `status` | Google OAuth and credential readiness |
+| `engine ingest run` | Fetch new documents from every active source |
+| `engine ingest status` | Per-source document counts and last-fetch times |
 | `engine pipeline run` | Execute the pipeline |
 | `engine pipeline runs` / `stages <run-id>` | Inspect run history and per-stage cost |
 

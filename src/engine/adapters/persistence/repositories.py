@@ -6,7 +6,7 @@ therefore impossible to forget: there is no query path that omits the scope.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from engine.adapters.persistence import mappers
@@ -150,6 +150,17 @@ class SqlAlchemySourceDocumentRepository:
             .limit(limit)
         )
         return [mappers.document_from_row(row) for row in self._session.scalars(statement)]
+
+    def count_for_source(self, workspace_id: str, source_id: str) -> int:
+        total = self._session.scalar(
+            select(func.count())
+            .select_from(SourceDocumentRow)
+            .where(
+                SourceDocumentRow.workspace_id == workspace_id,
+                SourceDocumentRow.source_id == source_id,
+            )
+        )
+        return int(total or 0)
 
 
 class SqlAlchemyRunRepository:

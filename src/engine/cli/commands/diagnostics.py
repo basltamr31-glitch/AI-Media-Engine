@@ -16,6 +16,7 @@ from rich.table import Table
 
 from engine import __version__
 from engine.adapters.config.policy_loader import PolicyLoadError
+from engine.adapters.sources.email.oauth import GoogleAuthError
 from engine.cli.container import build_container
 
 console = Console()
@@ -131,7 +132,29 @@ def doctor() -> None:
         checks.append(Check("Channel specs", _OK, f"{len(specs)} loaded"))
 
     checks.append(_check_optional_dependency("Anthropic SDK", "anthropic", "Phase 3"))
-    checks.append(_check_optional_dependency("HTTP client", "httpx", "Phase 1"))
+
+    checks.append(
+        Check("Fetchers", _OK, f"{len(container.fetchers)}: {', '.join(container.fetchers.keys())}")
+    )
+
+    # Gmail readiness is a warning, never a failure: RSS and API sources ingest
+    # perfectly well on a machine that has never authenticated with Google.
+    store = container.credential_store
+    if not store.has_client_secrets():
+        checks.append(
+            Check(
+                "Google OAuth client", _WARN, f"{store.credentials_file} not found (email sources)"
+            )
+        )
+    elif not store.has_token():
+        checks.append(Check("Google token", _WARN, "not authorised -- run: engine sources auth"))
+    else:
+        try:
+            store.load()
+        except GoogleAuthError as exc:
+            checks.append(Check("Google token", _WARN, str(exc)[:70]))
+        else:
+            checks.append(Check("Google token", _OK, str(store.token_file)))
 
     if settings.anthropic_api_key is None:
         checks.append(Check("LLM credentials", _WARN, "ENGINE_ANTHROPIC_API_KEY unset (Phase 3)"))

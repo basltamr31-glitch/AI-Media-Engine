@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>cs.AI updates on arXiv.org</title>
+    <link>http://arxiv.org/list/cs.AI/recent</link>
+    <description>Artificial Intelligence (cs.AI) updates on the arXiv.org e-print archive</description>
+    <language>en-us</language>
+    <pubDate>Mon, 04 Aug 2026 00:00:00 -0400</pubDate>
+
+    <item>
+      <title>Scaling Laws for Retrieval-Augmented Reasoning</title>
+      <link>https://arxiv.org/abs/2608.01234</link>
+      <description>We study how retrieval augmentation interacts with model scale across a
+        family of transformer architectures, and find a consistent power-law relationship between
+        corpus size and downstream reasoning accuracy.</description>
+      <guid isPermaLink="false">oai:arXiv.org:2608.01234v1</guid>
+      <pubDate>Mon, 04 Aug 2026 00:00:00 -0400</pubDate>
+      <author>Amira Haddad, Wei Zhang</author>
+      <category>cs.AI</category>
+    </item>
+
+    <item>
+      <title>Efficient Long-Context Attention Without Approximation</title>
+      <link>https://arxiv.org/abs/2608.01235</link>
+      <description>We present an exact attention mechanism whose memory footprint grows
+        sublinearly in sequence length, enabling million-token contexts on commodity hardware.</description>
+      <guid isPermaLink="false">oai:arXiv.org:2608.01235v1</guid>
+      <pubDate>Mon, 04 Aug 2026 00:00:00 -0400</pubDate>
+      <author>Lucas Moreau</author>
+      <category>cs.LG</category>
+    </item>
+
+    <!-- Deliberately degenerate: no title and no link. The fetcher must skip
+         this rather than storing an unusable document. -->
+    <item>
+      <description>An entry with no title and no link.</description>
+      <pubDate>Mon, 04 Aug 2026 00:00:00 -0400</pubDate>
+    </item>
+  </channel>
+</rss>

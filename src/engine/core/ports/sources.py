@@ -41,6 +41,26 @@ class SourceFetcher(Protocol):
 
 
 @runtime_checkable
+class RawDocumentArchive(Protocol):
+    """Durable storage for verbatim fetched payloads.
+
+    The database keeps what we ingested; the archive keeps exactly what arrived.
+    Three reasons this is worth the disk:
+
+    * **Replay.** Parsing can be re-run against real historical payloads when a
+      parser is fixed, without re-fetching (often impossible for email).
+    * **Fixtures.** Phase 2 builds parsers against real newsletters rather than
+      imagined ones.
+    * **Provenance.** If a published claim is ever challenged, the original
+      bytes are still on disk.
+    """
+
+    def store(self, document: SourceDocument, *, workspace_slug: str) -> str:
+        """Persist ``document`` verbatim and return a locator for it."""
+        ...
+
+
+@runtime_checkable
 class DocumentParser(Protocol):
     """Extracts story candidates from one document format."""
 

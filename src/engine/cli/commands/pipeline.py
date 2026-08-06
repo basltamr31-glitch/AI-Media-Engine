@@ -1,9 +1,9 @@
 """Pipeline commands.
 
-Phase 0 registers no stages, so ``pipeline run`` executes an empty pipeline.
-That is the point: it proves the whole spine works -- container wiring, run
-context, ledger persistence, stage recording, cost ceiling, transactions --
-before any business logic exists to hide a defect in it.
+``pipeline run`` executes the full daily pipeline. As of Phase 1 that is a
+single ingest stage; each subsequent phase appends to the list and nothing else
+here changes. That the runner, ledger and cost ceiling needed no modification to
+accommodate the first real stage is the return on building them first.
 """
 
 from __future__ import annotations
@@ -12,13 +12,29 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from engine.cli.container import build_container
+from engine.cli.container import Container, build_container
 from engine.pipeline.runner import PipelineRunner
 from engine.pipeline.stages.base import Stage
+from engine.pipeline.stages.ingest import IngestStage
 from engine.pipeline.stages.noop import NoOpStage
 
 console = Console()
 app = typer.Typer(help="Pipeline execution and run history.")
+
+
+def build_daily_stages(container: Container) -> list[Stage]:
+    """Assemble the daily content pipeline.
+
+    The single place the stage order is declared. Later phases append here:
+    extract, resolve, enrich, editorial, generate, render.
+    """
+    return [
+        IngestStage(
+            fetchers=container.fetchers,
+            archive=container.raw_archive,
+            max_documents=container.settings.ingest_max_documents,
+        ),
+    ]
 
 
 @app.command("run")
@@ -39,8 +55,7 @@ def run(
         console.print(f"[red]Workspace {target_slug!r} not found.[/red] Run: engine workspace seed")
         raise typer.Exit(code=1)
 
-    # Phase 1 replaces this with the real stage list.
-    stages: list[Stage] = [NoOpStage("smoke")] if smoke else []
+    stages: list[Stage] = [NoOpStage("smoke")] if smoke else build_daily_stages(container)
 
     runner = PipelineRunner(
         uow=container.unit_of_work(),
@@ -60,8 +75,7 @@ def run(
         f"({len(stages)} stage(s), {ledger.duration_seconds:.3f}s, "
         f"${ledger.cost_usd:.4f})"
     )
-    if not stages:
-        console.print("[dim]No stages registered yet -- pipeline stages arrive in Phase 1.[/dim]")
+    console.print(f"[dim]Breakdown: engine pipeline stages {ledger.id}[/dim]")
 
 
 @app.command("runs")

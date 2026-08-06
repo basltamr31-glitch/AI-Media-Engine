@@ -62,6 +62,10 @@ class SourceDocumentRepository(Protocol):
         self, workspace_id: str, source_id: str, *, limit: int = 100
     ) -> list[SourceDocument]: ...
 
+    def count_for_source(self, workspace_id: str, source_id: str) -> int:
+        """Total documents ingested from a source. Powers `engine ingest status`."""
+        ...
+
 
 @runtime_checkable
 class RunRepository(Protocol):

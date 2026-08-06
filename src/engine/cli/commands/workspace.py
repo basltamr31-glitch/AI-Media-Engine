@@ -27,15 +27,35 @@ def _sync_sources(
     container: Container,
     workspace: Workspace,
     config: WorkspaceConfig,
-) -> tuple[int, int]:
-    """Insert or update sources to match the config. Returns (created, updated)."""
-    created = updated = 0
+) -> tuple[int, int, int]:
+    """Reconcile stored sources with the config file.
+
+    Matching is by **name**, not by identifier. A source's URL is a mutable
+    property of it -- arXiv moving from ``http`` to ``https``, or an API gaining
+    a query parameter, should update the existing source and keep its ingested
+    history. Matching on identifier instead silently forks a second source and
+    the old one keeps being polled forever.
+
+    Anything in the database whose name is absent from the config is
+    **deactivated, never deleted**: the config is the source of truth for what
+    we fetch, but documents already ingested are evidence and are never
+    discarded on a config edit.
+
+    Returns:
+        ``(created, updated, deactivated)``.
+    """
+    created = updated = deactivated = 0
+    configured_names = {source_config.name for source_config in config.sources}
+
     with container.unit_of_work() as uow:
+        stored = uow.sources.list_for_workspace(workspace.id, only_active=False)
+        by_name: dict[str, list[Source]] = {}
+        for source in stored:
+            by_name.setdefault(source.name, []).append(source)
+
         for source_config in config.sources:
-            existing = uow.sources.get_by_identifier(
-                workspace.id, source_config.kind.value, source_config.identifier
-            )
-            if existing is None:
+            candidates = by_name.get(source_config.name, [])
+            if not candidates:
                 uow.sources.add(
                     Source(
                         workspace_id=workspace.id,
@@ -49,17 +69,44 @@ def _sync_sources(
                     )
                 )
                 created += 1
-            else:
-                existing.name = source_config.name
-                existing.parser_key = source_config.parser_key
-                existing.trust_weight = source_config.trust_weight
-                existing.is_active = source_config.is_active
-                existing.config = source_config.config
-                existing.updated_at = container.clock.now()
-                uow.sources.update(existing)
-                updated += 1
+                continue
+
+            # Keep whichever row actually carries ingestion history, then break
+            # ties toward the oldest (ULIDs sort by creation time). Preferring
+            # an identifier match instead would orphan a source's entire
+            # document history the moment its URL changed -- which is precisely
+            # the case this reconciliation exists to handle.
+            primary = min(
+                candidates,
+                key=lambda s: (-uow.documents.count_for_source(workspace.id, s.id), s.id),
+            )
+            primary.kind = source_config.kind
+            primary.identifier = source_config.identifier
+            primary.parser_key = source_config.parser_key
+            primary.trust_weight = source_config.trust_weight
+            primary.is_active = source_config.is_active
+            primary.config = source_config.config
+            primary.updated_at = container.clock.now()
+            uow.sources.update(primary)
+            updated += 1
+
+            # Collapse any historical duplicates of this name.
+            for duplicate in candidates:
+                if duplicate.id != primary.id and duplicate.is_active:
+                    duplicate.is_active = False
+                    duplicate.updated_at = container.clock.now()
+                    uow.sources.update(duplicate)
+                    deactivated += 1
+
+        for source in stored:
+            if source.name not in configured_names and source.is_active:
+                source.is_active = False
+                source.updated_at = container.clock.now()
+                uow.sources.update(source)
+                deactivated += 1
+
         uow.commit()
-    return created, updated
+    return created, updated, deactivated
 
 
 @app.command("seed")
@@ -98,10 +145,13 @@ def seed(
             action = "updated"
         uow.commit()
 
-    created, updated = _sync_sources(container, workspace, config)
+    created, updated, deactivated = _sync_sources(container, workspace, config)
 
     console.print(f"[green]Workspace {action}:[/green] {workspace.slug} ({workspace.id})")
-    console.print(f"Sources: [cyan]{created}[/cyan] created, [cyan]{updated}[/cyan] updated")
+    console.print(
+        f"Sources: [cyan]{created}[/cyan] created, [cyan]{updated}[/cyan] updated, "
+        f"[cyan]{deactivated}[/cyan] deactivated"
+    )
 
     # Validate the referenced policy files now, so a broken brand profile is a
     # seeding error rather than a generation-time surprise in Phase 3.
