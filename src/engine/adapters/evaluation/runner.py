@@ -132,7 +132,11 @@ class EvalRunner:
         bound = logger.bind(case=case.key)
         request = LLMRequest(
             system=build_system(),
-            prompt=build_prompt(_story_like(case), language=language_name(case.language)),
+            prompt=build_prompt(
+                _story_like(case),
+                language=language_name(case.language),
+                max_characters=case.max_characters,
+            ),
             model=self._model,
             max_tokens=self._max_tokens,
             cacheable_prefix=build_cacheable_prefix(

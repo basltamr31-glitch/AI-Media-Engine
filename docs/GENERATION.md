@@ -59,6 +59,8 @@ It earns its keep immediately. The shipped history:
 | `gen-1` | First prompt. | — |
 | `gen-2` | Name the language in words. | `gen-1` said "in ar". A small model read a BCP-47 tag as decoration and wrote the Arabic post **in English** — silently, because the asset was correctly labelled `ar` either way. |
 | `gen-3` | Restate the language *after* the source text; forbid copying from it. | `gen-2` still drifted to English and began reproducing the abstract near-verbatim. Both are recency effects: a long English prefix followed by a long English article is the worst possible context for an instruction sitting at the top. |
+| `gen-4` | Drop the `hook` field; compute it instead. | The golden set showed the model returning **hashtags** in that field on every single case. The hook is definitionally the first sentence of the body, so asking a model to copy it was inviting an error that `first_sentence()` cannot make. The first change the eval suite paid for. |
+| `gen-5` | Restate the character limit *after* the source text, as a word count as well. | The limit was stated once, in the cached prefix, thousands of tokens before the model started writing — the identical recency failure `gen-3` fixed for language, left in place for length because only language had been caught at the time. Words as well as characters because a model has no character counter: it cannot verify "under 280 characters" mid-sentence, and it can approximately track "about 42 words". |
 
 Because the version is on the revision, the fix is *visible*: the Arabic asset
 carries revisions at `gen-1` (0% Arabic script), `gen-2` (0%), and `gen-3`
@@ -73,7 +75,7 @@ Three pieces, and the boundary between them is a cost decision:
 |---|---|---|
 | `cacheable_prefix` | Brand voice, few-shot exemplars, channel rules | **Yes** — identical for every story on that channel and language |
 | `system` | The instruction: write only from the source | No, but tiny |
-| `prompt` | Headline, source text, provenance, final language reminder | No — different every story |
+| `prompt` | Headline, source text, provenance, closing language **and length** reminder | No — different every story |
 
 Cache reads bill at roughly a tenth of fresh input, so anything story-specific
 placed ahead of the boundary quietly costs real money. A test asserts the

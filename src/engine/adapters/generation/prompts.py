@@ -47,7 +47,36 @@ from engine.core.domain.story import Story
 #: the model returning hashtags in that field on every single case -- a field
 #: the schema could not have got wrong, because it should never have been asked
 #: for. The first check the eval suite paid for.
-PROMPT_VERSION: Final = "gen-4"
+#: gen-5: restate the length limit last, next to the language, and give it as a
+#: word count as well as characters. The limit was stated once, in the cached
+#: prefix, thousands of tokens before the model started writing -- the same
+#: recency failure gen-3 fixed for language, left in place for length because
+#: only language had been caught at the time. Words as well as characters
+#: because a model has no character counter: it cannot check "under 280
+#: characters" while writing, and it can approximately check "about 45 words".
+PROMPT_VERSION: Final = "gen-5"
+
+#: Average characters per word, used to turn a channel's character limit into a
+#: word budget. Six is deliberately generous for English (~5.7 with the space)
+#: and close for Arabic, so the derived budget lands *under* the real limit in
+#: both -- a post that comes in short is publishable, and one that comes in long
+#: is refused by the stage.
+_CHARS_PER_WORD: Final = 6.0
+
+#: Fraction of the limit to aim for. The budget is a target the model will miss
+#: in both directions; aiming at the ceiling means half the misses are refusals.
+_LENGTH_SAFETY: Final = 0.9
+
+
+def word_budget(max_characters: int) -> int:
+    """Roughly how many words fit in a channel's character limit.
+
+    Approximate on purpose. Its job is to give the model a quantity it can
+    actually track while writing, not to be arithmetically defensible: the
+    real limit is still enforced exactly, in characters, after generation.
+    """
+    return max(15, int(max_characters * _LENGTH_SAFETY / _CHARS_PER_WORD))
+
 
 #: How much primary-source text one prompt carries. Enough for the model to
 #: have something to say, bounded so a long-read cannot blow the context window
@@ -186,6 +215,7 @@ def build_prompt(
     story: Story,
     *,
     language: str,
+    max_characters: int | None = None,
     max_source_chars: int = MAX_SOURCE_CHARS,
 ) -> str:
     """The per-story half, placed after the cache boundary.
@@ -213,9 +243,18 @@ def build_prompt(
         parts.append(f"Published: {enrichment.published_at.date().isoformat()}")
     parts.append(f"Source URL: {enrichment.url}")
     parts += ["", "Primary source text:", enrichment.text[:max_source_chars].strip()]
-    parts += [
-        "",
+
+    closing = (
         f"Now write the post. Do not copy sentences from the source above -- "
-        f"it is your material, not your draft. Write it in {language}.",
-    ]
+        f"it is your material, not your draft. Write it in {language}."
+    )
+    if max_characters is not None:
+        # Last, for the same reason the language is: this is the instruction the
+        # model is most likely to still be holding when it starts writing.
+        closing += (
+            f" Keep it under {max_characters} characters -- about "
+            f"{word_budget(max_characters)} words. Going over means it cannot "
+            f"be posted at all."
+        )
+    parts += ["", closing]
     return "\n".join(parts)

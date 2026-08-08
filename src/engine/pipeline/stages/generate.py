@@ -235,7 +235,11 @@ class GenerateStage:
 
         request = LLMRequest(
             system=build_system(),
-            prompt=build_prompt(story, language=language_name(target.brand.language)),
+            prompt=build_prompt(
+                story,
+                language=language_name(target.brand.language),
+                max_characters=target.channel.max_characters,
+            ),
             model=self._model,
             max_tokens=self._max_tokens,
             cacheable_prefix=build_cacheable_prefix(

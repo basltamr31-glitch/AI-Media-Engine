@@ -15,6 +15,7 @@ from engine.adapters.generation.prompts import (
     build_prompt,
     build_system,
     first_sentence,
+    word_budget,
 )
 from engine.core.domain.content import BrandProfile
 from engine.core.domain.enums import StoryStatus
@@ -208,3 +209,54 @@ class TestSystem:
 
         assert "nothing else" in system
         assert "do not estimate numbers" in system
+
+
+class TestLengthConstraint:
+    """gen-5. The limit was stated once, in the cached prefix, thousands of
+    tokens before the model began writing -- the same recency failure gen-3
+    fixed for language, left in place for length because only language had
+    been caught at the time.
+    """
+
+    def test_the_limit_is_restated_after_the_source(self):
+        prompt = build_prompt(a_story(), language="English", max_characters=280)
+
+        source_at = prompt.index("Primary source text:")
+        assert prompt.index("280 characters") > source_at
+
+    def test_it_gives_a_word_count_too(self):
+        """A model has no character counter; it can approximately track words."""
+        prompt = build_prompt(a_story(), language="English", max_characters=280)
+
+        assert f"{word_budget(280)} words" in prompt
+
+    def test_it_says_what_going_over_costs(self):
+        prompt = build_prompt(a_story(), language="English", max_characters=280)
+
+        assert "cannot be posted" in prompt
+
+    def test_the_limit_is_optional(self):
+        """Channel-agnostic products have no character limit to state."""
+        prompt = build_prompt(a_story(), language="English")
+
+        assert "characters -- about" not in prompt
+
+    def test_language_is_still_restated_last(self):
+        """gen-5 must not displace the gen-3 fix it sits beside."""
+        prompt = build_prompt(a_story(), language="Arabic", max_characters=280)
+
+        assert prompt.index("Arabic") > prompt.index("Primary source text:")
+
+
+class TestWordBudget:
+    def test_the_budget_fits_inside_the_character_limit(self):
+        """Overshooting the budget must still leave the post publishable."""
+        for limit in (280, 500, 2200, 3000):
+            assert word_budget(limit) * 6 <= limit
+
+    def test_a_tight_limit_still_leaves_room_to_write(self):
+        """Below a floor the budget stops being useful guidance."""
+        assert word_budget(10) == 15
+
+    def test_a_bigger_limit_allows_more_words(self):
+        assert word_budget(3000) > word_budget(280)
