@@ -38,6 +38,20 @@ class HttpError(RuntimeError):
         super().__init__(f"{message} (url={url}, status={status_code})")
 
 
+class RobotsDisallowedError(HttpError):
+    """Raised when a site's ``robots.txt`` refuses the request.
+
+    A subclass rather than a separate exception, so callers that treat all
+    transport problems alike keep working unchanged. It exists at all because
+    this failure is categorically different from the others: retrying will not
+    help, the fix is not ours to make, and a run that skipped ten pages because
+    it was asked to must be able to say so rather than reporting ten timeouts.
+    """
+
+    def __init__(self, url: str, message: str = "refused by robots.txt") -> None:
+        super().__init__(url, message)
+
+
 class HttpResponse(ImmutableModel):
     """A completed HTTP response, decoded far enough to be useful."""
 

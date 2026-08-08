@@ -84,6 +84,13 @@ def run(
     repeat: int = typer.Option(
         1, "--repeat", min=1, max=9, help="Sample each case N times and keep the median."
     ),
+    min_score: float = typer.Option(
+        None,
+        "--min-score",
+        min=0.0,
+        max=1.0,
+        help="Absolute floor. Fails below it regardless of the baseline.",
+    ),
 ) -> None:
     """Generate the golden set and score it against the checks."""
     container = build_container()
@@ -133,7 +140,16 @@ def run(
         raise typer.Exit(code=0 if report.passed else 1)
 
     regressed = _compare(report, baseline_path, tolerance)
-    raise typer.Exit(code=1 if (regressed or not report.passed) else 0)
+
+    # An absolute floor as well as the baseline comparison, because the two
+    # catch different things. The baseline catches a drop; the floor catches a
+    # slow slide that never drops far enough in one step to look like one, and
+    # a baseline that was re-saved after each small decline.
+    below_floor = min_score is not None and report.score < min_score
+    if below_floor:
+        console.print(f"[red]Below the floor:[/red] {report.score:.3f} < {min_score:.3f}")
+
+    raise typer.Exit(code=1 if (regressed or below_floor or not report.passed) else 0)
 
 
 def _print_report(report: EvalReport) -> None:

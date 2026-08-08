@@ -25,7 +25,7 @@ provenance, and a closed feedback loop from published content back into ranking.
 
 ---
 
-## Status: Phase 5 complete
+## Status: Phase 6 complete
 
 Phase 0 built the spine: domain model, persistence, migrations, configuration,
 pipeline orchestration, observability, CLI, tests and architectural enforcement.
@@ -65,8 +65,21 @@ engagement can be attached to it. Every decision emits a signal attributed to a
 real person, and a human rewrite is measured against the model's draft rather
 than merely replacing it.
 
-The engine now runs end to end: a newsletter arrives, a folder of publishable
-posts comes out, and what those posts achieved comes back in.
+Phase 6 makes it run without a person. The daily pipeline -- which until now
+existed only as eight commands run by hand -- is assembled into one idempotent
+`engine schedule run`, guarded by a lock so two runs cannot overlap, reporting
+failure through exit codes and durable alerts rather than a terminal nobody is
+watching. `engine schedule health` reports the failure that produces no failed
+runs: a scheduler that quietly stopped firing. Fetching became polite first --
+`robots.txt` and per-host pacing, applied at the transport port so every
+fetcher inherits them -- because that is the precondition for running
+unattended, not a footnote to it. And `engine tune weights` turns the
+engagement data back into an input for the ranking, correlating each signal
+against measured outcomes and proposing a profile that a human chooses to
+adopt.
+
+The engine now runs end to end, on a timer: a newsletter arrives, a folder of
+publishable posts comes out, and what those posts achieved comes back in.
 
 One honest caveat on "publication-ready". The capability is complete; the
 quality bar is not met yet on the shipped local model, which scores **0.881**
@@ -75,6 +88,12 @@ overrunning X's 280-character limit). Both are limits of a 1.7B model rather
 than of the prompt. That is the point of having built the evals and the local
 provider first: quality became *measurable* before it became billable, so
 moving to a hosted model changes a number rather than an opinion.
+
+A second caveat, on Phase 6. Its bar is *"runs unattended for two weeks without
+intervention"*, and **that fortnight has not elapsed**. Everything it would
+exercise is built and tested -- the lock, the alerting, the health check, the
+politeness -- but "it survived fourteen consecutive mornings" is a claim only
+time can support, and it is not being made here.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -85,7 +104,7 @@ moving to a hosted model changes a number rather than an opinion.
 | **3** | Editorial scoring, selection, LLM generation, brand voice, cost, evals | ✅ Complete |
 | **4** | Rendering: dated editions, `package.json` + `post.md`, Arabic RTL | ✅ Complete |
 | **5** | Review workflow, channel export, publication and performance capture | ✅ Complete |
-| 6 | Hardening, evals, scheduling | Not started |
+| **6** | Politeness, scheduling, alerting, health, weight tuning, CI | ✅ Complete |
 | 7 | Multi-tenant API, billing, self-serve | Not started |
 
 ---
@@ -164,6 +183,8 @@ What a day's output folder contains, and why Arabic needs HTML:
 How content is reviewed, published and measured:
 [`docs/REVIEW.md`](docs/REVIEW.md).
 How plugins are discovered: [`docs/PLUGINS.md`](docs/PLUGINS.md).
+How to run it on a timer, and how to tell it is still working:
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 To include Gmail newsletters, authorise once (see [`docs/INGESTION.md`](docs/INGESTION.md)):
 
@@ -213,6 +234,9 @@ Full instructions, including troubleshooting: [`docs/SETUP.md`](docs/SETUP.md).
 | `engine plugins list` | Discovered fetchers and parsers, and what failed to load |
 | `engine pipeline run` | Execute the pipeline |
 | `engine pipeline runs` / `stages <run-id>` | Inspect run history and per-stage cost |
+| `engine schedule run` | The whole daily pipeline, unattended and idempotent |
+| `engine schedule status` / `health` | Is it running, and has it been working? |
+| `engine tune weights` | What measured engagement says the ranking should weight |
 
 ---
 

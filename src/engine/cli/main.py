@@ -34,10 +34,12 @@ from engine.cli.commands import (
     publish,
     render,
     review,
+    schedule,
     score,
     select,
     sources,
     stories,
+    tune,
     workspace,
 )
 
@@ -91,6 +93,8 @@ app.add_typer(cost.app, name="cost")
 app.add_typer(evals.app, name="eval")
 app.add_typer(render.app, name="render")
 app.add_typer(review.app, name="review")
+app.add_typer(schedule.app, name="schedule")
+app.add_typer(tune.app, name="tune")
 app.add_typer(export.app, name="export")
 app.add_typer(publish.app, name="publish")
 app.add_typer(metrics.app, name="metrics")

@@ -13,9 +13,14 @@ import pytest
 from engine.core.domain.enums import RunStatus, StoryStatus
 from engine.core.domain.story import Story
 from engine.core.ports.enrichment import ExtractionError
-from engine.core.ports.http import HttpError
+from engine.core.ports.http import HttpError, RobotsDisallowedError
 from engine.pipeline.runner import PipelineRunner
-from engine.pipeline.stages.enrich import ATTEMPTS_KEY, ERROR_KEY, EnrichStage
+from engine.pipeline.stages.enrich import (
+    ATTEMPTS_KEY,
+    CODE_ROBOTS_DISALLOWED,
+    ERROR_KEY,
+    EnrichStage,
+)
 from tests.fakes import FakeExtractor, FakeHttpClient
 
 pytestmark = pytest.mark.integration
@@ -457,6 +462,24 @@ class TestFailureCodes:
         )
 
         assert self._reasons(uow, persisted_workspace.id, ledger) == {"fetch_failed_403": 1}
+
+    def test_a_robots_refusal_is_its_own_category(self, uow, clock, settings, persisted_workspace):
+        """Not a fetch failure: retrying will not help and nothing is broken.
+
+        An operator reading "12 refused by robots" knows something entirely
+        different from "12 requests failed", and only one of them is a bug.
+        """
+        store_story(uow, persisted_workspace, clock, url="https://example.com/0")
+
+        ledger = run_stage(
+            uow,
+            clock,
+            settings,
+            persisted_workspace.id,
+            build_stage(error=RobotsDisallowedError("https://example.com/0")),
+        )
+
+        assert self._reasons(uow, persisted_workspace.id, ledger) == {CODE_ROBOTS_DISALLOWED: 1}
 
     def test_the_story_still_keeps_the_readable_message(
         self, uow, clock, settings, persisted_workspace

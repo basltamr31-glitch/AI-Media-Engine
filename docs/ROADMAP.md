@@ -206,15 +206,44 @@ See [`docs/REVIEW.md`](REVIEW.md).
 
 ---
 
-## Phase 6 — Hardening
+## Phase 6 — Hardening ✅ *(capability complete; see the caveat below)*
 
-- Feedback-driven weight tuning
-- Scheduling
-- Retries, rate limiting, failure alerting
-- Postgres migration when concurrency demands it
-- Coverage and eval thresholds in CI
+- ✅ **Politeness** — `robots.txt` and per-host rate limiting, as a decorator
+  over the HTTP port so every fetcher inherits them
+  ([ADR 0019](adr/0019-politeness-as-transport-policy.md)). This was the
+  precondition for scheduling, not an afterthought to it.
+- ✅ **The daily pipeline actually assembled.** `pipeline run` had never been
+  updated past Phase 1 and ran a single ingest stage; it now runs all eight,
+  stopping before rendering so unattended work ends by filling the review queue.
+- ✅ **Scheduling** — `engine schedule run`, idempotent, with a stale-tolerant
+  lock so two runs cannot overlap, and distinct exit codes for "failed" and
+  "skipped because busy".
+- ✅ **Retries and failure alerting** — retries and exponential backoff already
+  existed; Phase 6 adds alert sinks (log and `data/alerts.jsonl`) and
+  `engine schedule health`, which reports **staleness** — the failure that
+  produces no failed runs to notice.
+- ✅ **Feedback-driven weight tuning** — `engine tune weights` correlates each
+  ranking signal against measured engagement and proposes a profile. It
+  proposes and never applies
+  ([ADR 0020](adr/0020-weight-tuning-proposes-never-applies.md)).
+- ✅ **CI** — GitHub Actions running format, lint, mypy, import contracts,
+  tests, a migration-drift check, and an 85% coverage floor.
+- ⏸ **Postgres** — deferred, per this phase's own condition: *"when concurrency
+  demands it"*. It does not. The schema is already restricted to a
+  Postgres-compatible subset, so this remains a connection-string change.
 
 **Done when:** it runs unattended for two weeks without intervention.
+
+**Honest status:** the capability is complete and tested, and the two-week
+unattended run **has not happened yet** — it is a claim that only elapsed time
+can support. Everything that stretch would exercise is in place; nothing has
+yet proved it survives fourteen consecutive mornings.
+
+One further limit worth stating: the golden-set quality floor is enforced by
+`engine eval run --min-score`, but that job cannot run on a hosted CI runner,
+which has no model. It runs locally, or on a self-hosted runner with the model
+resident. The CI workflow declares the job and skips it visibly rather than
+pretending the gate is enforced everywhere.
 
 ---
 

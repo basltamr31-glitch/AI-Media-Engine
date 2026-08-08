@@ -123,6 +123,19 @@ class Settings(BaseSettings):
     #: anonymous scraper is the first thing a publisher blocks.
     http_user_agent: str = "ai-media-engine/0.1 (+https://github.com/; contact via repo)"
 
+    # --- Politeness (Phase 6) --------------------------------------------
+    #: Whether to obey ``robots.txt``. On by default and only switchable for
+    #: fetching one's own sites, where the rules are the operator's own to set.
+    #: Turning it off to reach a third party's pages is a decision this project
+    #: does not endorse, which is why it is a setting rather than a flag on the
+    #: command that would make it convenient.
+    http_respect_robots: bool = True
+    #: Minimum gap between two requests to the same host, unless the site's
+    #: ``Crawl-delay`` asks for more.
+    http_min_interval_seconds: float = Field(default=1.0, ge=0.0, le=60.0)
+    #: How long a fetched ``robots.txt`` is trusted before being re-read.
+    http_robots_ttl_seconds: float = Field(default=86_400.0, gt=0)
+
     # --- LLM (Phase 3) ---------------------------------------------------
     #: Which implementation of the LLM port the container builds. Local by
     #: default: generation quality has to be judged before it is paid for, and

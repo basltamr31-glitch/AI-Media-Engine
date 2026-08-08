@@ -26,7 +26,7 @@ from typing import Any, Final
 from engine.core.domain.enums import StoryStatus
 from engine.core.domain.story import Story
 from engine.core.ports.enrichment import ContentExtractor, ExtractionError
-from engine.core.ports.http import HttpClient, HttpError
+from engine.core.ports.http import HttpClient, HttpError, RobotsDisallowedError
 from engine.observability.logging import get_logger
 from engine.pipeline.context import RunContext
 from engine.pipeline.stages.base import StageResult
@@ -50,6 +50,10 @@ ERROR_KEY: Final = "enrichment_error"
 #: a character count or a URL turns one category into hundreds.
 CODE_NO_URL: Final = "no_primary_url"
 CODE_FETCH_FAILED: Final = "fetch_failed"
+#: Kept apart from the fetch failures deliberately. Retrying will not help, the
+#: fix is not ours to make, and an operator reading "12 refused by robots" knows
+#: something entirely different from "12 requests failed".
+CODE_ROBOTS_DISALLOWED: Final = "robots_disallowed"
 CODE_UNSUPPORTED_TYPE: Final = "unsupported_content_type"
 CODE_EXTRACTOR_ERROR: Final = "extractor_error"
 
@@ -136,6 +140,12 @@ class EnrichStage:
 
         try:
             response = self._http.get(url)
+        except RobotsDisallowedError:
+            # Spends an attempt like any other failure, which is what we want:
+            # the refusal is permanent, so exhausting the budget is how the
+            # story stops being reconsidered. Later attempts cost nothing on
+            # the network -- the robots answer is cached per host.
+            return self._fail(story, "refused by robots.txt", CODE_ROBOTS_DISALLOWED, story_logger)
         except HttpError as exc:
             # The status is part of the category: 403 (blocked), 401 (paywall)
             # and 404 (gone) call for different responses from an operator.

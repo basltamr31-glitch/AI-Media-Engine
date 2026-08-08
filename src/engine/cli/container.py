@@ -18,6 +18,7 @@ from pathlib import Path
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from engine.adapters.alerts import CompositeAlertSink, FileAlertSink, LoggingAlertSink
 from engine.adapters.clock import SystemClock
 from engine.adapters.config.policy_loader import PolicyLoader
 from engine.adapters.enrichment.extractor import TrafilaturaExtractor
@@ -35,10 +36,12 @@ from engine.adapters.plugins.discovery import (
     PluginLoader,
     PluginRecord,
 )
+from engine.adapters.politeness import PoliteHttpClient, RateLimiter, RobotsPolicy
 from engine.adapters.scoring.registry import SignalRegistry
 from engine.adapters.sources.archive import FileSystemRawArchive, NullRawArchive
 from engine.adapters.sources.email.oauth import GoogleCredentialStore, credential_store_from
 from engine.adapters.sources.registry import FetcherRegistry, ParserRegistry
+from engine.core.ports.alerts import AlertSink
 from engine.core.ports.clock import Clock
 from engine.core.ports.enrichment import ContentExtractor
 from engine.core.ports.http import HttpClient
@@ -104,9 +107,38 @@ class Container:
 
     @cached_property
     def http(self) -> HttpClient:
-        return HttpxClient(
+        """The client every fetcher gets: retrying, rate-limited and polite.
+
+        Composed here rather than in the fetchers, so transport policy has one
+        home and adding a fetcher cannot accidentally opt out of it.
+        """
+        transport = HttpxClient(
             timeout_seconds=self.settings.http_timeout_seconds,
             user_agent=self.settings.http_user_agent,
+        )
+        limiter = RateLimiter(min_interval_seconds=self.settings.http_min_interval_seconds)
+        return PoliteHttpClient(
+            transport,
+            robots=RobotsPolicy(
+                transport,
+                user_agent=self.settings.http_user_agent,
+                ttl_seconds=self.settings.http_robots_ttl_seconds,
+                limiter=limiter,
+            ),
+            limiter=limiter,
+            enforce_robots=self.settings.http_respect_robots,
+        )
+
+    @cached_property
+    def alerts(self) -> AlertSink:
+        """Where an unattended failure is reported.
+
+        Both channels always: the log reaches whatever already collects the
+        process's output, and the file survives a terminal nobody was watching.
+        """
+        return CompositeAlertSink(
+            LoggingAlertSink(),
+            FileAlertSink(self.resolve_path(self.settings.data_dir) / "alerts.jsonl"),
         )
 
     @cached_property

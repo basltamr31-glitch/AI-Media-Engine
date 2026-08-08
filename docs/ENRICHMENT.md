@@ -67,10 +67,20 @@ One story per request, sequentially, with a per-run ceiling of 25
 (`ENGINE_ENRICH_MAX_STORIES`) and the engine's identifying user-agent.
 Concurrency would be easy and would make the engine a nuisance.
 
-**Not yet implemented: `robots.txt`.** At current volume enrichment is an
-operator-triggered fetch of pages a human was already sent a link to, which is
-materially different from crawling. Before this runs unattended or at scale it
-needs a robots check — recorded in [`FUTURE_IDEAS.md`](FUTURE_IDEAS.md).
+**`robots.txt` is obeyed**, and requests to one host are spaced by at least a
+second or by the site's own `Crawl-delay`, whichever is longer. Neither is
+implemented here: both live in a decorator over the HTTP port, so every fetcher
+in the engine inherits them ([ADR 0019](adr/0019-politeness-as-transport-policy.md)).
+
+A refusal is recorded as `robots_disallowed`, deliberately separate from the
+fetch failures. Retrying will not help, nothing is broken, and an operator
+reading "12 refused by robots" knows something entirely different from "12
+requests failed".
+
+This arrived in Phase 6 with scheduling, and the two are connected: through
+Phases 2–5 enrichment was an operator-triggered fetch of pages a human had
+already been sent a link to, which is materially different from crawling.
+Running on a timer removed both halves of that justification at once.
 
 ## Troubleshooting
 

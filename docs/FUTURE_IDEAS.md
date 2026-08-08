@@ -99,13 +99,11 @@ candidates came from an older one, instead of the current all-or-nothing
 ``--reparse``. Cheap to add once a parser has actually been revised.
 *Revisit when:* the first parser version bump ships against a real backlog.
 
-**robots.txt for enrichment.**
-Enrichment fetches pages on a story's behalf. Today that is operator-triggered,
-sequential and small -- a request for a page a human was already sent a link
-to. A robots check (with caching, since one host serves many stories) is
-needed before it runs unattended or at volume.
-*Revisit when:* enrichment moves to a schedule, or the per-run ceiling is
-raised past a few dozen.
+**robots.txt for enrichment.** — **Done in Phase 6.**
+The recorded trigger was "revisit when enrichment moves to a schedule", and
+Phase 6's scheduling fired it. Implemented as a decorator over the HTTP port,
+with per-host caching and `Crawl-delay` honoured
+([ADR 0019](adr/0019-politeness-as-transport-policy.md)).
 
 **A PDF extractor.**
 Papers, filings and regulatory notices are frequently the primary source and

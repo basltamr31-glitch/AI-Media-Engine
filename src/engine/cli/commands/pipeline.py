@@ -1,9 +1,13 @@
 """Pipeline commands.
 
-``pipeline run`` executes the full daily pipeline. As of Phase 1 that is a
-single ingest stage; each subsequent phase appends to the list and nothing else
-here changes. That the runner, ledger and cost ceiling needed no modification to
-accommodate the first real stage is the return on building them first.
+``pipeline run`` executes the whole daily pipeline: ingest, parse, resolve,
+enrich, evidence, score, select, generate. Each phase appended to one list and
+changed nothing else here -- the runner, ledger and cost ceiling written in
+Phase 0 have accommodated eight stages without modification, which is the
+return on building the orchestrator before anything to orchestrate.
+
+The individual ``engine <stage> run`` commands remain, and are what to reach
+for when debugging one step. This is the command a scheduler calls.
 """
 
 from __future__ import annotations
@@ -12,29 +16,122 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from engine.adapters.config.policy_loader import PolicyLoadError
+from engine.adapters.config.schema import WorkspaceConfig
 from engine.cli.container import Container, build_container
+from engine.core.domain.content import BrandProfile
+from engine.core.domain.pack import DomainPack
+from engine.core.domain.workspace import Workspace
+from engine.core.ports.packs import PackLoadError, PackNotFoundError
 from engine.pipeline.runner import PipelineRunner
 from engine.pipeline.stages.base import Stage
+from engine.pipeline.stages.enrich import EnrichStage
+from engine.pipeline.stages.evidence import EvidenceStage
+from engine.pipeline.stages.generate import GenerateStage
 from engine.pipeline.stages.ingest import IngestStage
 from engine.pipeline.stages.noop import NoOpStage
+from engine.pipeline.stages.parse import ParseStage
+from engine.pipeline.stages.resolve import ResolveStage
+from engine.pipeline.stages.score import ScoreStage
+from engine.pipeline.stages.select import SelectStage
 
 console = Console()
 app = typer.Typer(help="Pipeline execution and run history.")
 
 
-def build_daily_stages(container: Container) -> list[Stage]:
-    """Assemble the daily content pipeline.
+def build_daily_stages(container: Container, workspace: Workspace) -> list[Stage]:
+    """Assemble the daily content pipeline, in the order it must run.
 
-    The single place the stage order is declared. Later phases append here:
-    extract, resolve, enrich, editorial, generate, render.
+    The single place the stage order is declared. Each stage consumes what the
+    previous one produced, and every one of them is a no-op when there is
+    nothing new -- which is what makes running the whole thing on a timer safe
+    rather than wasteful.
+
+    The pipeline deliberately **stops at generation**. Rendering writes a dated
+    edition, and a scheduled run that produced an edition every morning would
+    imply the day's content was finished when in fact nothing had been reviewed.
+    Review is a human gate (ADR 0018): the unattended part ends by filling the
+    queue, and ``engine render run`` is invoked once a person has emptied it.
+
+    Raises:
+        typer.Exit: If the workspace's configuration cannot be loaded. A daily
+            run with a broken policy must fail loudly at assembly rather than
+            silently skip the stages that needed it.
     """
+    settings = container.settings
+    config, pack, brands = _configuration(container, workspace)
+
     return [
         IngestStage(
             fetchers=container.fetchers,
             archive=container.raw_archive,
-            max_documents=container.settings.ingest_max_documents,
+            max_documents=settings.ingest_max_documents,
+        ),
+        ParseStage(
+            parsers=container.parsers,
+            max_documents=settings.parse_max_documents,
+        ),
+        ResolveStage(
+            max_candidates=settings.resolve_max_candidates,
+            window_days=settings.resolve_window_days,
+            similarity_threshold=settings.resolve_similarity_threshold,
+        ),
+        EnrichStage(
+            http=container.http,
+            extractor=container.extractor,
+            max_stories=settings.enrich_max_stories,
+            max_attempts=settings.enrich_max_attempts,
+        ),
+        EvidenceStage(
+            max_stories=settings.evidence_max_stories,
+            window_days=settings.resolve_window_days,
+        ),
+        ScoreStage(
+            computers=container.signal_computers,
+            pack=pack,
+            policy=config.editorial,
+            max_stories=settings.score_max_stories,
+            window_days=settings.resolve_window_days,
+        ),
+        SelectStage(
+            policy=config.editorial,
+            window_hours=settings.select_window_hours,
+            candidate_window_days=settings.resolve_window_days,
+        ),
+        GenerateStage(
+            llm=container.llm,
+            pack=pack,
+            brand_profiles=brands,
+            model=settings.active_model,
+            max_stories=settings.generate_max_stories,
+            max_tokens=settings.generate_max_tokens,
+            max_cost_usd=settings.max_cost_usd_per_run,
         ),
     ]
+
+
+def _configuration(
+    container: Container, workspace: Workspace
+) -> tuple[WorkspaceConfig, DomainPack, list[BrandProfile]]:
+    """Everything the daily pipeline needs from configuration, loaded once."""
+    try:
+        config = container.policy_loader.load_workspace(workspace.slug)
+        pack = container.packs.load(config.pack)
+        brands = [
+            container.policy_loader.load_brand_profile(key, workspace.id)
+            for key in config.brand_profiles
+        ]
+    except (PolicyLoadError, PackNotFoundError, PackLoadError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not brands:
+        console.print(
+            f"[red]Workspace {workspace.slug!r} declares no brand profiles.[/red] "
+            "Generation needs a voice to write in."
+        )
+        raise typer.Exit(code=1)
+    return config, pack, brands
 
 
 @app.command("run")
@@ -55,7 +152,9 @@ def run(
         console.print(f"[red]Workspace {target_slug!r} not found.[/red] Run: engine workspace seed")
         raise typer.Exit(code=1)
 
-    stages: list[Stage] = [NoOpStage("smoke")] if smoke else build_daily_stages(container)
+    stages: list[Stage] = (
+        [NoOpStage("smoke")] if smoke else build_daily_stages(container, workspace)
+    )
 
     runner = PipelineRunner(
         uow=container.unit_of_work(),

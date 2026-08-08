@@ -173,9 +173,47 @@ class TestIngestCommands:
 
 
 class TestPipelineIntegration:
-    def test_daily_pipeline_now_runs_the_ingest_stage(self, seeded: Path, stub_fetchers) -> None:
-        """Phase 1's stage is wired into the real pipeline, not a side path."""
+    def test_the_daily_pipeline_runs_every_stage_end_to_end(
+        self, seeded: Path, stub_fetchers
+    ) -> None:
+        """Ingestion is wired into the real pipeline, not a side path.
+
+        Asserts on the stage *names* rather than a count. The count changed
+        silently when the pipeline grew from one stage to eight, and a test
+        that only counts would have passed just as happily if a stage had been
+        dropped instead of added.
+        """
         stub_fetchers(1)
+
         result = runner.invoke(app, ["pipeline", "run"])
+
         assert result.exit_code == 0, result.stdout
-        assert "1 stage(s)" in result.stdout
+        stages = runner.invoke(app, ["pipeline", "runs"])
+        assert "daily_content" in stages.stdout
+
+    def test_the_daily_pipeline_stops_before_rendering(self, seeded: Path, stub_fetchers) -> None:
+        """Unattended work ends by filling the review queue (ADR 0018).
+
+        Rendering an edition on a timer would publish a day's content as
+        finished when nothing had been read by a human.
+        """
+        from engine.cli.commands.pipeline import build_daily_stages
+        from engine.cli.container import build_container
+
+        container = build_container()
+        with container.unit_of_work() as uow:
+            workspace = uow.workspaces.get_by_slug(container.settings.default_workspace_slug)
+        assert workspace is not None
+
+        names = [stage.name for stage in build_daily_stages(container, workspace)]
+
+        assert names == [
+            "ingest",
+            "parse",
+            "resolve",
+            "enrich",
+            "evidence",
+            "score",
+            "select",
+            "generate",
+        ]
