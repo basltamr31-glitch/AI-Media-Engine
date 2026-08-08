@@ -82,12 +82,21 @@ The engine now runs end to end, on a timer: a newsletter arrives, a folder of
 publishable posts comes out, and what those posts achieved comes back in.
 
 One honest caveat on "publication-ready". The capability is complete; the
-quality bar is not met yet on the shipped local model, which scores **0.881**
-on its own golden set with two open failures (copying from the source, and
-overrunning X's 280-character limit). Both are limits of a 1.7B model rather
-than of the prompt. That is the point of having built the evals and the local
-provider first: quality became *measurable* before it became billable, so
-moving to a hosted model changes a number rather than an opinion.
+quality bar is not met yet on the shipped local model. Over **nine samples per
+case** it scores **0.941**, with one open failure — verbatim copying from the
+source on English LinkedIn — which is a limit of a 1.7B model rather than of
+the prompt.
+
+The *spread* matters more than the median, and is the reason the review gate is
+not optional. Individual generations that the median hides have written the
+Arabic post entirely in English, and overrun X's hard limit by 37%. Three
+samples per case could not distinguish that from prompt quality: two runs of an
+identical prompt scored 0.976 and 0.821. Nine can, which is why the baseline
+now records nine.
+
+That is the point of having built the evals and the local provider first:
+quality became *measurable* before it became billable, so moving to a hosted
+model changes a number rather than an opinion.
 
 A second caveat, on Phase 6. Its bar is *"runs unattended for two weeks without
 intervention"*, and **that fortnight has not elapsed**. Everything it would

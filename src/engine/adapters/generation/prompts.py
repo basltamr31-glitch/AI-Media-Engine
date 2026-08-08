@@ -54,6 +54,24 @@ from engine.core.domain.story import Story
 #: only language had been caught at the time. Words as well as characters
 #: because a model has no character counter: it cannot check "under 280
 #: characters" while writing, and it can approximately check "about 45 words".
+#:
+#: gen-6 was attempted twice and reverted both times. It made the copying
+#: rule countable -- "never reuse more than 6 words in a row" -- on the
+#: theory that worked for length in gen-5: a model cannot obey a rule it
+#: cannot check itself against. It does not transfer.
+#:
+#: In the closing line, beside the length rule, it *regressed* to 0.886.
+#: The longer closing pushed the language reminder further from the end and
+#: the Arabic post came back 0% Arabic -- the failure gen-3 had fixed. The
+#: tail of a prompt is a scarce resource, and adding a rule there evicted
+#: one rather than adding one.
+#:
+#: Moved into the system text, where it competes with nothing, it scored
+#: 0.973 against gen-5's 0.976 -- indistinguishable, with copying unchanged
+#: at 55/173 runs versus 47/164. Two placements, no effect: the remaining
+#: copying is a limit of a 1.7B model, not of the instruction. Shipping
+#: instruction text that demonstrably changes nothing only costs tokens, so
+#: it is recorded here instead of carried in the prompt.
 PROMPT_VERSION: Final = "gen-5"
 
 #: Average characters per word, used to turn a channel's character limit into a

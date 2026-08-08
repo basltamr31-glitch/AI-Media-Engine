@@ -117,11 +117,18 @@ selected story becomes one post per brand voice, channel and language, priced
 per generation, with a ceiling enforced before each call.
 
 The *bar* is not met yet, and the golden set is what says so rather than an
-impression. On the shipped local model (`qwen3:1.7b`, median of three samples)
-the suite scores **0.881**, with two open failures: verbatim copying from the
-source, and writing past X's 280-character limit. Both are limits of a 1.7B
-model rather than of the prompt — the same suite scores every case clean on
-well-formed input.
+impression. On the shipped local model (`qwen3:1.7b`, median of **nine**
+samples) the suite scores **0.941**, with one open failure: verbatim copying
+from the source on English LinkedIn. Arabic never fails that check, because
+translating makes copying impossible — the failure is English-only and is a
+limit of a 1.7B model rather than of the prompt.
+
+Nine samples rather than three, learned the hard way: two runs of an identical
+prompt scored 0.976 and 0.821, so a three-sample comparison cannot tell a
+prompt improvement from a lucky draw. The tail is the operational risk — single
+generations have written the Arabic post in English and overrun X's limit by
+37% — and it is why the human review gate is load-bearing rather than
+ceremonial.
 
 That gap is deliberate rather than deferred. Generation quality had to become
 *measurable* before it was worth paying for, which is why the local provider
