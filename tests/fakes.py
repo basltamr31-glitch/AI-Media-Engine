@@ -287,11 +287,13 @@ class FakeLLM:
         *,
         value: BaseModel | None = None,
         fails_with: str | None = None,
+        fails_code: str = "llm_failed",
         usage: TokenUsage | None = None,
         cost_usd: float = 0.0,
     ) -> None:
         self._value = value
         self._fails_with = fails_with
+        self._fails_code = fails_code
         self._usage = usage or TokenUsage(input_tokens=100, output_tokens=20)
         self._cost_usd = cost_usd
         self.requests: list[LLMRequest] = []
@@ -299,7 +301,7 @@ class FakeLLM:
     def generate_structured(self, request: LLMRequest, schema: type[SchemaT]) -> LLMResult[SchemaT]:
         self.requests.append(request)
         if self._fails_with:
-            raise LLMError(self._fails_with, model=request.model)
+            raise LLMError(self._fails_with, code=self._fails_code, model=request.model)
         # A minimal instance when none was supplied, so callers that only care
         # about the plumbing need not hand-construct one per schema.
         value = schema.model_construct() if self._value is None else cast(SchemaT, self._value)

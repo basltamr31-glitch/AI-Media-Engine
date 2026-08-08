@@ -363,7 +363,29 @@ class TestRefusals:
 
         ledger = run_stage(uow, clock, settings, persisted_workspace.id, stage)
 
-        assert stage_meta(uow, persisted_workspace.id, ledger)["failures"] == {"model_failed": 2}
+        assert stage_meta(uow, persisted_workspace.id, ledger)["failures"] == {
+            "model_failed:llm_failed": 2
+        }
+
+    def test_provider_failures_are_counted_apart(self, uow, clock, settings, persisted_workspace):
+        """A timeout and a schema violation need different fixes.
+
+        Collapsed into one "model_failed: 4", an operator learns nothing
+        actionable: raise the timeout, install the model, and lower the
+        token ceiling are three different mornings.
+        """
+        store_selected_story(uow, persisted_workspace, clock)
+        stage = GenerateStage(
+            llm=FakeLLM(fails_with="timed out", fails_code="timeout"),
+            pack=a_pack(),
+            brand_profiles=brands(persisted_workspace.id, "en"),
+            model="test-model",
+        )
+
+        ledger = run_stage(uow, clock, settings, persisted_workspace.id, stage)
+
+        failures = stage_meta(uow, persisted_workspace.id, ledger)["failures"]
+        assert failures == {"model_failed:timeout": 2}
 
     def test_an_unselected_story_is_not_written_for(
         self, uow, clock, settings, persisted_workspace

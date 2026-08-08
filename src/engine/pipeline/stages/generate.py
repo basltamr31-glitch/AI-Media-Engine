@@ -252,7 +252,13 @@ class GenerateStage:
             result = self._llm.generate_structured(request, GeneratedContent)
         except LLMError as exc:
             bound.warning("generate.model_failed", code=exc.code, error=str(exc))
-            return _Outcome(code=CODE_MODEL_FAILED)
+            # The provider's own code is kept, not flattened into one bucket.
+            # "model_failed: 4" tells an operator nothing they can act on: a
+            # timeout means raise the timeout or shorten the source, a
+            # schema_violation means the model cannot hold the output format,
+            # and provider_unreachable means Ollama is not running. Three
+            # different mornings, three different fixes, one former label.
+            return _Outcome(code=f"{CODE_MODEL_FAILED}:{exc.code}")
 
         body = result.value.body.strip()
         if len(body) > target.channel.max_characters:

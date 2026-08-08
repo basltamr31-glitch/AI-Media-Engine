@@ -37,6 +37,28 @@ _REASONS = {
     "model_failed": "the model call failed",
 }
 
+#: Provider failure codes, which arrive qualified as ``model_failed:<code>``.
+#: Each names the fix, because that is the whole reason they are kept apart.
+_MODEL_REASONS = {
+    "timeout": "the model ran out of time -- raise ENGINE_OLLAMA_TIMEOUT_SECONDS",
+    "provider_unreachable": "the provider is not reachable -- is Ollama running?",
+    "provider_unavailable": "the provider rejected the request",
+    "model_not_found": "the model is not installed -- run: ollama pull <model>",
+    "schema_violation": "the model could not hold the output format",
+    "malformed_response": "the provider returned something that was not JSON",
+    "max_tokens": "the model hit the token ceiling -- raise ENGINE_GENERATE_MAX_TOKENS",
+    "empty_response": "the model returned nothing",
+    "refusal": "the model declined to answer",
+}
+
+
+def _describe(code: str) -> str:
+    """Turn a refusal code into something an operator can act on."""
+    category, _, detail = code.partition(":")
+    if not detail:
+        return _REASONS.get(code, code)
+    return _MODEL_REASONS.get(detail, f"{_REASONS.get(category, category)} ({detail})")
+
 
 def _require_workspace(container: Container, slug: str | None) -> Workspace:
     target = slug or container.settings.default_workspace_slug
@@ -158,7 +180,7 @@ def _print_outcome(meta: dict[str, Any]) -> None:
     table.add_column("Reason")
     table.add_column("Assets", justify="right")
     for code, count in sorted(failures.items(), key=lambda item: -item[1]):
-        table.add_row(_REASONS.get(code, code), str(count))
+        table.add_row(_describe(code), str(count))
     console.print(table)
 
 
