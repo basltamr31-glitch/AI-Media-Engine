@@ -17,7 +17,14 @@ from types import TracebackType
 from typing import Protocol, runtime_checkable
 
 from engine.core.domain.account import Account, Actor, Membership
-from engine.core.domain.content import AssetSpend, ContentAsset, ContentRevision
+from engine.core.domain.content import (
+    AssetSpend,
+    ContentAsset,
+    ContentRevision,
+    PerformanceMetric,
+    Publication,
+    PublicationPerformance,
+)
 from engine.core.domain.enums import StoryStatus, SubjectType
 from engine.core.domain.ledger import RunLedger, StageRecord
 from engine.core.domain.signal import Signal
@@ -280,6 +287,46 @@ class ContentAssetRepository(Protocol):
 
 
 @runtime_checkable
+class PublicationRepository(Protocol):
+    """Records that content went live. Append-only.
+
+    No update or delete method exists, for the same reason the signal log has
+    none: a publication either happened or it did not, and a table where it can
+    be un-happened is not a record of anything.
+    """
+
+    def add(self, publication: Publication) -> Publication: ...
+
+    def get(self, workspace_id: str, publication_id: str) -> Publication | None: ...
+
+    def list_for_asset(self, workspace_id: str, asset_id: str) -> list[Publication]: ...
+
+    def list_recent(self, workspace_id: str, *, limit: int = 50) -> list[Publication]: ...
+
+    def count_for_workspace(self, workspace_id: str) -> int: ...
+
+
+@runtime_checkable
+class PerformanceMetricRepository(Protocol):
+    """Engagement observations, and the read model over them. Append-only."""
+
+    def add(self, metric: PerformanceMetric) -> PerformanceMetric: ...
+
+    def list_for_publication(
+        self, workspace_id: str, publication_id: str
+    ) -> list[PerformanceMetric]: ...
+
+    def performance(self, workspace_id: str, *, limit: int = 50) -> list[PublicationPerformance]:
+        """Every publication with its latest reading per metric, newest first.
+
+        One query over the log rather than a maintained total: a stored
+        running value would be a second source of truth, and the first
+        correction typed in by hand would put the two out of step permanently.
+        """
+        ...
+
+
+@runtime_checkable
 class RunRepository(Protocol):
     def add(self, run: RunLedger) -> RunLedger: ...
 
@@ -341,6 +388,12 @@ class UnitOfWork(Protocol):
 
     @property
     def assets(self) -> ContentAssetRepository: ...
+
+    @property
+    def publications(self) -> PublicationRepository: ...
+
+    @property
+    def metrics(self) -> PerformanceMetricRepository: ...
 
     @property
     def runs(self) -> RunRepository: ...

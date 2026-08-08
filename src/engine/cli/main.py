@@ -8,6 +8,8 @@ later without reimplementing anything.
 
 from __future__ import annotations
 
+import sys
+
 import typer
 from rich.console import Console
 
@@ -19,21 +21,47 @@ from engine.cli.commands import (
     enrich,
     evals,
     evidence,
+    export,
     generate,
     identity,
     ingest,
     llm,
+    metrics,
     pack,
     parse,
     pipeline,
     plugins,
+    publish,
     render,
+    review,
     score,
     select,
     sources,
     stories,
     workspace,
 )
+
+
+def _use_utf8_console() -> None:
+    """Make the console able to print what the engine writes.
+
+    Windows terminals still default to a legacy code page, and cp1252 cannot
+    encode Arabic at all: printing a generated post raised ``UnicodeEncodeError``
+    rather than showing it. Arabic is the wedge this product is built on, so a
+    CLI that cannot display it is not usable for the review step it exists to
+    support.
+
+    ``errors="replace"`` rather than ``strict``: a terminal that genuinely
+    cannot render a glyph should show a placeholder, not abort the command that
+    was about to tell someone what their post says.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+_use_utf8_console()
 
 console = Console()
 
@@ -62,6 +90,10 @@ app.add_typer(generate.app, name="generate")
 app.add_typer(cost.app, name="cost")
 app.add_typer(evals.app, name="eval")
 app.add_typer(render.app, name="render")
+app.add_typer(review.app, name="review")
+app.add_typer(export.app, name="export")
+app.add_typer(publish.app, name="publish")
+app.add_typer(metrics.app, name="metrics")
 app.add_typer(stories.stories_app, name="stories")
 app.add_typer(llm.app, name="llm")
 app.add_typer(pipeline.app, name="pipeline")

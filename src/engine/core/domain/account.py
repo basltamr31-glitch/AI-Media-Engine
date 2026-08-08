@@ -34,6 +34,12 @@ DEFAULT_ACCOUNT_SLUG: Final = "default"
 #: "who did this?" always has an answer.
 SYSTEM_ACTOR_KEY: Final = "system"
 
+#: The human counterpart, provisioned with the account so a fresh install has
+#: someone to attribute a review decision to. Editing under the system actor
+#: would erase the machine-versus-human distinction the revision chain exists
+#: to record, and that distinction is not recoverable afterwards.
+OWNER_ACTOR_KEY: Final = "owner"
+
 
 class Quota(DomainModel):
     """Usage ceilings for an account.

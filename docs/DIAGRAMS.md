@@ -31,8 +31,8 @@ graph TB
 
     models["<b>Model providers</b><br/>Any LLM / embedding vendor.<br/>Reached only through<br/>capability ports."]
 
-    channels["<b>Publishing platforms</b><br/>LinkedIn, X, Instagram,<br/>email, webhooks"]
-    analytics["<b>Engagement sources</b><br/>Platform metrics"]
+    channels["<b>Publishing platforms</b><br/>LinkedIn, X, Instagram,<br/>email, webhooks.<br/>The engine exports for them;<br/>a human posts (ADR 0018)."]
+    analytics["<b>Engagement sources</b><br/>Platform metrics, entered<br/>by hand in V1"]
 
     packs["<b>Packs &amp; plugins</b><br/>Domain packs,<br/>source plugins"]
 
@@ -45,8 +45,8 @@ graph TB
     engine -->|reads| apis
     engine -->|enriches from| web
     engine -->|infers via| models
-    engine -->|publishes to| channels
-    engine -->|collects from| analytics
+    engine -->|exports for| channels
+    engine -->|records readings from| analytics
     packs -.->|extends| engine
 
     classDef person fill:#0b5394,stroke:#073763,color:#fff
@@ -345,7 +345,7 @@ sequenceDiagram
     Runner->>Repo: finalise RunLedger (status, usage, cost, duration)
     Runner-->>CLI: RunLedger
 
-    note over CLI,FS: Assets are created in `draft`. Human review is the gate,<br/>and the generated-to-published diff is kept as revisions —<br/>which is how the system will learn (Phase 5).
+    note over CLI,FS: Assets are created in `draft`. Human review is the gate,<br/>and the generated-to-published diff is kept as revisions.<br/>Review, export, publication and measurement are driven<br/>one artifact at a time, outside the pipeline (ADR 0018).
 ```
 
 ---
@@ -369,4 +369,6 @@ The load-bearing constraints, visible across all four:
    primary source. This is the constraint that keeps the engine from becoming
    a republisher.
 4. **Content revisions and signals are append-only** (3c) — what the model wrote
-   is never overwritten by what the human published.
+   is never overwritten by what the human published. Publications and
+   performance metrics are append-only for the same reason: an outcome that
+   can be quietly revised is not evidence of anything.

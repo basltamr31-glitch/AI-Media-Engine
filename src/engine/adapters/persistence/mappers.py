@@ -17,6 +17,8 @@ from engine.adapters.persistence.models import (
     EditorialScoreRow,
     EvidenceRow,
     MembershipRow,
+    PerformanceMetricRow,
+    PublicationRow,
     RunRow,
     RunStageRow,
     SignalRow,
@@ -27,7 +29,13 @@ from engine.adapters.persistence.models import (
     WorkspaceRow,
 )
 from engine.core.domain.account import Account, Actor, Membership, Quota
-from engine.core.domain.content import ContentAsset, ContentRevision, RevisionOrigin
+from engine.core.domain.content import (
+    ContentAsset,
+    ContentRevision,
+    PerformanceMetric,
+    Publication,
+    RevisionOrigin,
+)
 from engine.core.domain.enums import (
     ActorKind,
     ContentState,
@@ -580,6 +588,59 @@ def revision_from_row(row: ContentRevisionRow) -> ContentRevision:
         cost_usd=row.cost_usd,
         created_at=row.created_at,
         meta=dict(row.meta),
+    )
+
+
+# --- Distribution and performance --------------------------------------------
+
+
+def publication_to_row(publication: Publication) -> PublicationRow:
+    return PublicationRow(
+        id=publication.id,
+        workspace_id=publication.workspace_id,
+        asset_id=publication.asset_id,
+        channel_key=publication.channel_key,
+        external_url=publication.external_url,
+        external_id=publication.external_id,
+        published_at=publication.published_at,
+        published_by=publication.published_by,
+    )
+
+
+def publication_from_row(row: PublicationRow) -> Publication:
+    return Publication(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        asset_id=row.asset_id,
+        channel_key=row.channel_key,
+        external_url=row.external_url,
+        external_id=row.external_id,
+        published_at=row.published_at,
+        published_by=row.published_by,
+    )
+
+
+def metric_to_row(metric: PerformanceMetric) -> PerformanceMetricRow:
+    return PerformanceMetricRow(
+        id=metric.id,
+        workspace_id=metric.workspace_id,
+        publication_id=metric.publication_id,
+        metric=metric.metric,
+        value=metric.value,
+        captured_at=metric.captured_at,
+        collected_by=metric.collected_by,
+    )
+
+
+def metric_from_row(row: PerformanceMetricRow) -> PerformanceMetric:
+    return PerformanceMetric(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        publication_id=row.publication_id,
+        metric=row.metric,
+        value=row.value,
+        captured_at=row.captured_at,
+        collected_by=row.collected_by,
     )
 
 

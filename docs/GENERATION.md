@@ -151,7 +151,7 @@ unrecorded for tokens.
 ## What is deliberately not here
 
 - **No auto-publishing.** Assets are created in `draft`. The human review gate
-  is a feature.
+  is a feature -- see [`REVIEW.md`](REVIEW.md) for what happens after it.
 - **No per-claim evidence binding.** The asset records which evidence backed it
   (`evidence_ids`); binding individual generated sentences to sources is a
   later milestone.

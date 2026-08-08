@@ -25,7 +25,7 @@ provenance, and a closed feedback loop from published content back into ranking.
 
 ---
 
-## Status: Phase 4 complete
+## Status: Phase 5 complete
 
 Phase 0 built the spine: domain model, persistence, migrations, configuration,
 pipeline orchestration, observability, CLI, tests and architectural enforcement.
@@ -57,8 +57,16 @@ Phase 4 makes it publishable. A day's output becomes a dated folder:
 `package.json` as the canonical machine output and `post.md` as the human view
 of it. After that command nothing downstream needs a database.
 
-The engine now runs end to end: a newsletter arrives, and a folder of drafted
-posts comes out the other side.
+Phase 5 closes the loop. Drafts go through a human gate -- read, edit, approve
+or reject with a reason -- then export as the exact text to paste, per channel.
+Publication is *recorded* rather than performed: no platform OAuth, no automated
+posting, just the durable link between an asset and where it went live, so
+engagement can be attached to it. Every decision emits a signal attributed to a
+real person, and a human rewrite is measured against the model's draft rather
+than merely replacing it.
+
+The engine now runs end to end: a newsletter arrives, a folder of publishable
+posts comes out, and what those posts achieved comes back in.
 
 One honest caveat on "publication-ready". The capability is complete; the
 quality bar is not met yet on the shipped local model, which scores **0.881**
@@ -76,7 +84,7 @@ moving to a hosted model changes a number rather than an opinion.
 | **2** | Extraction, story resolution, primary-source enrichment, evidence | ✅ Complete |
 | **3** | Editorial scoring, selection, LLM generation, brand voice, cost, evals | ✅ Complete |
 | **4** | Rendering: dated editions, `package.json` + `post.md`, Arabic RTL | ✅ Complete |
-| 5 | Review workflow, distribution export, performance capture | Not started |
+| **5** | Review workflow, channel export, publication and performance capture | ✅ Complete |
 | 6 | Hardening, evals, scheduling | Not started |
 | 7 | Multi-tenant API, billing, self-serve | Not started |
 
@@ -130,6 +138,18 @@ engine eval run                  # did quality just regress?
 engine render run                # write the day's edition to disk
 ```
 
+Then decide what ships, send it out, and record what it did:
+
+```bash
+engine review queue              # what is waiting for a human
+engine review show <asset-id>    # read one before deciding
+engine review approve <asset-id> # or: reject --reason "..."
+engine export run                # approved posts -> files to paste
+engine publish record <asset-id> --url https://...
+engine metrics add <publication-id> -m impressions -v 4210
+engine metrics report            # what published content achieved
+```
+
 How parsing decides what is a story, and how to add a parser:
 [`docs/PARSING.md`](docs/PARSING.md).
 Why a story is enriched or refused: [`docs/ENRICHMENT.md`](docs/ENRICHMENT.md).
@@ -141,6 +161,8 @@ How a story becomes a post, per channel and language:
 How quality regressions are made visible: [`docs/EVALS.md`](docs/EVALS.md).
 What a day's output folder contains, and why Arabic needs HTML:
 [`docs/RENDERING.md`](docs/RENDERING.md).
+How content is reviewed, published and measured:
+[`docs/REVIEW.md`](docs/REVIEW.md).
 How plugins are discovered: [`docs/PLUGINS.md`](docs/PLUGINS.md).
 
 To include Gmail newsletters, authorise once (see [`docs/INGESTION.md`](docs/INGESTION.md)):
@@ -183,6 +205,11 @@ Full instructions, including troubleshooting: [`docs/SETUP.md`](docs/SETUP.md).
 | `engine cost report` | Spend per asset and per attempt, and recent runs |
 | `engine eval list` / `run` | Score generation against the golden set |
 | `engine render run` / `show` | Write and inspect the day's edition |
+| `engine review queue` / `show` | Content awaiting a human decision |
+| `engine review approve` / `reject` / `edit` | Decide what ships, and record why |
+| `engine export run` / `show` | Approved posts as per-channel files to paste |
+| `engine publish record` / `list` | Record that content went live, and where |
+| `engine metrics add` / `report` | Capture engagement and report what worked |
 | `engine plugins list` | Discovered fetchers and parsers, and what failed to load |
 | `engine pipeline run` | Execute the pipeline |
 | `engine pipeline runs` / `stages <run-id>` | Inspect run history and per-stage cost |

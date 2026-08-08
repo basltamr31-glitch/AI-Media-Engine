@@ -20,6 +20,8 @@ from engine.adapters.persistence.repositories import (
     SqlAlchemyContentAssetRepository,
     SqlAlchemyEditorialScoreRepository,
     SqlAlchemyEvidenceRepository,
+    SqlAlchemyPerformanceMetricRepository,
+    SqlAlchemyPublicationRepository,
     SqlAlchemyRunRepository,
     SqlAlchemySourceDocumentRepository,
     SqlAlchemySourceRepository,
@@ -55,6 +57,8 @@ class SqlAlchemyUnitOfWork:
     evidence: SqlAlchemyEvidenceRepository
     scores: SqlAlchemyEditorialScoreRepository
     assets: SqlAlchemyContentAssetRepository
+    publications: SqlAlchemyPublicationRepository
+    metrics: SqlAlchemyPerformanceMetricRepository
     runs: SqlAlchemyRunRepository
     signals: SqlAlchemySignalRepository
 
@@ -74,6 +78,8 @@ class SqlAlchemyUnitOfWork:
         self.evidence = SqlAlchemyEvidenceRepository(self._session)
         self.scores = SqlAlchemyEditorialScoreRepository(self._session)
         self.assets = SqlAlchemyContentAssetRepository(self._session)
+        self.publications = SqlAlchemyPublicationRepository(self._session)
+        self.metrics = SqlAlchemyPerformanceMetricRepository(self._session)
         self.runs = SqlAlchemyRunRepository(self._session)
         self.signals = SqlAlchemySignalRepository(self._session)
         return self

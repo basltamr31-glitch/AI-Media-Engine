@@ -153,16 +153,56 @@ longer depends on which word the model happened to start with.
 
 ---
 
-## Phase 5 — Review, distribution, measurement
+## Phase 5 — Review, distribution, measurement ✅
 
-- Review queue and approve/reject workflow over the content state machine
-- Channel export formats
+- Review queue and approve/reject/edit workflow over the content state machine
+- Channel export formats, applying the pack's per-channel rules
 - `Publication` recording
 - Manual `PerformanceMetric` entry
 - First engagement report
 
 **Done when:** the loop is closed — content published, performance recorded,
-data available to ranking.
+data available to ranking. ✅
+
+The loop runs end to end: a draft is reviewed, edited, approved, exported as the
+exact text to paste, recorded as published with a URL, and measured. Every step
+emits a signal attributed to a real actor, so `content.edited`,
+`content.approved`, `content.rejected`, `content.published` and
+`publication.engagement` are populated for the first time rather than merely
+declared.
+
+Two decisions are worth recording.
+
+**The engine records publication rather than performing it**
+([ADR 0018](adr/0018-record-publication-do-not-perform-it.md)). Auto-publishing
+needs per-platform OAuth, a scheduler and a retry queue, and it closes nothing
+until the last integration lands — while producing exactly the `Publication`
+rows the manual path produces today. What the feedback loop needs is the *link*
+between an asset and an outcome; who pressed *post* is not the interesting part.
+The cost is a manual last mile, accepted; the benefit is that the loop is
+complete now, for every channel including those with no API, with no platform
+credentials anywhere in the system.
+
+**A human edit is measured, not just stored.** The revision chain already kept
+the model's draft beside the human's rewrite; Phase 5 adds
+`similarity`/`characters_changed`/`is_rewrite` so the pair is queryable in
+aggregate. The comparison is character-level rather than word-level because
+Arabic marks agreement and definiteness with affixes: a one-letter correction
+changes the inside of a word, and a word-level ratio would report a rewrite
+where an editor would say a diacritic was added.
+
+One defect from Phase 3.4 was fixed here rather than carried: generated
+revisions were attributed to a hard-coded `"actor_system"` that matched no row
+in `actors`. It read correctly in every test that only read it back, and joined
+to nothing. Attribution now resolves the account's real system actor, and a
+human `owner` actor is provisioned alongside it so review decisions attribute to
+a person.
+
+Nothing consumes the engagement data yet. Refitting ranking weights against it
+is Phase 6; the schema was built for it
+([ADR 0016](adr/0016-open-scoring-profile.md)), but no learner exists.
+
+See [`docs/REVIEW.md`](REVIEW.md).
 
 ---
 

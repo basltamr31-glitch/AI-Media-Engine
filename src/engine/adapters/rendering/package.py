@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Final
 
-from engine.core.domain.content import ContentAsset, ContentRevision
+from engine.core.domain.content import ContentAsset, ContentRevision, normalise_hashtags
 from engine.core.domain.story import EditorialScore, Evidence, Story
 
 #: Bump on any breaking change to the shape below. Consumers key off this.
@@ -64,24 +64,6 @@ def _evidence_payload(records: list[Evidence]) -> list[dict[str, Any]]:
     ]
 
 
-def _normalise_hashtags(raw: Any) -> list[str]:
-    """Tags without their leading ``#``, deduplicated, order preserved.
-
-    The schema asks the model for bare words and it sometimes supplies the
-    ``#`` anyway; anything rendering them adds its own, and the result is
-    ``##MatrAIx``. Normalised here so every consumer of the package gets the
-    same answer instead of each one stripping defensively.
-    """
-    if not isinstance(raw, list):
-        return []
-    seen: dict[str, None] = {}
-    for item in raw:
-        tag = str(item).lstrip("#").strip()
-        if tag:
-            seen.setdefault(tag, None)
-    return list(seen)
-
-
 def _asset_payload(asset: ContentAsset, revision: ContentRevision | None) -> dict[str, Any]:
     body = revision.body if revision else ""
     return {
@@ -96,7 +78,7 @@ def _asset_payload(asset: ContentAsset, revision: ContentRevision | None) -> dic
         # Counted here so a publisher does not have to agree with us about what
         # a character is before it can check a channel limit.
         "characters": len(body),
-        "hashtags": _normalise_hashtags(asset.meta.get("hashtags")),
+        "hashtags": normalise_hashtags(asset.meta.get("hashtags")),
         "hook": asset.meta.get("hook") or "",
         "revision": {
             "number": revision.revision_number if revision else 0,

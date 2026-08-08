@@ -43,6 +43,9 @@ needs independent retry semantics.*
 ## Product
 
 **Auto-publishing without human approval.**
+Enforced as of Phase 5, and stronger than the heading suggests: the engine holds
+no platform credentials and has no code path that posts anywhere (ADR 0018). It
+records that a human published something.
 Every generated asset passes through `APPROVED` before it can be published. The
 first fabricated claim published under a customer's name is a churn event, and
 possibly a legal one. Human review is also the mechanism that collects the

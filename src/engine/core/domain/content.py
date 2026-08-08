@@ -248,6 +248,58 @@ class Publication(ImmutableModel):
     )
 
 
+def normalise_hashtags(raw: Any) -> list[str]:
+    """Tags without their leading ``#``, deduplicated, order preserved.
+
+    The generation schema asks the model for bare words and it supplies the
+    ``#`` anyway often enough to matter; anything displaying them adds its own,
+    and the result is ``##MatrAIx``. Normalised in the domain so the renderer,
+    the export and the review screen cannot disagree about it -- each stripping
+    defensively is how they drift.
+
+    Accepts ``Any`` because the tags arrive from an asset's untyped ``meta``.
+    """
+    if not isinstance(raw, list):
+        return []
+    seen: dict[str, None] = {}
+    for item in raw:
+        tag = str(item).lstrip("#").strip()
+        if tag:
+            seen.setdefault(tag, None)
+    return list(seen)
+
+
+class PublicationPerformance(ImmutableModel):
+    """What one publication has been observed to achieve.
+
+    A read model over the metric log, like :class:`AssetSpend` is over the
+    revision chain. Each metric collapses to its **most recent** observation,
+    because "how is this post doing" is a question about now; the earlier
+    readings stay in the log, which is where growth over time is recovered
+    from.
+    """
+
+    publication_id: str
+    asset_id: str
+    channel_key: str
+    published_at: datetime
+    metrics: dict[str, float] = Field(
+        default_factory=dict,
+        description="Metric name to its latest observed value.",
+    )
+    observations: int = Field(default=0, ge=0)
+    last_captured_at: datetime | None = None
+
+    @property
+    def has_data(self) -> bool:
+        """False for a post nobody has measured yet -- most of them, at first."""
+        return self.observations > 0
+
+    def value_of(self, metric: str) -> float:
+        """The latest reading, or zero. Unmeasured and zero are both 'no reach'."""
+        return self.metrics.get(metric, 0.0)
+
+
 class PerformanceMetric(ImmutableModel):
     """One engagement observation for a publication.
 

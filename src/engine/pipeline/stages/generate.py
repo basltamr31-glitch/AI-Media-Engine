@@ -35,6 +35,7 @@ from engine.adapters.generation.prompts import (
     build_system,
     first_sentence,
 )
+from engine.core.domain.account import SYSTEM_ACTOR_KEY
 from engine.core.domain.content import BrandProfile, ContentAsset, RevisionOrigin
 from engine.core.domain.enums import StoryStatus
 from engine.core.domain.language import language_name
@@ -42,16 +43,12 @@ from engine.core.domain.ledger import TokenUsage
 from engine.core.domain.pack import ChannelDef, DomainPack, ProductDef
 from engine.core.domain.story import Story
 from engine.core.ports.llm import LLMError, LLMPort, LLMRequest, LLMResult
+from engine.core.ports.repositories import UnitOfWork
 from engine.observability.logging import get_logger
 from engine.pipeline.context import RunContext
 from engine.pipeline.stages.base import StageResult
 
 logger = get_logger(__name__)
-
-#: Model output is attributed to this actor. Revisions record who wrote them,
-#: and "the system" has to be a real, stable value for the edit-delta dataset
-#: to be able to tell a machine draft from a human rewrite.
-SYSTEM_ACTOR: Final = "actor_system"
 
 #: Asset meta keys, kept here so the stage and the CLI agree on spelling.
 HOOK_KEY: Final = "hook"
@@ -276,6 +273,28 @@ class GenerateStage:
         )
         return _Outcome(usage=result.usage, cost_usd=result.cost_usd)
 
+    def _system_actor_id(self, uow: UnitOfWork, workspace_id: str) -> str:
+        """Resolve the account's system actor, the author of every generated draft.
+
+        Raises:
+            LookupError: If the workspace or its system actor is missing. Both
+                indicate a provisioning bug, and a fabricated id here would
+                quietly poison the attribution the edit-delta dataset depends
+                on -- the failure has to be loud and immediate.
+        """
+        workspace = uow.workspaces.get(workspace_id)
+        if workspace is None:
+            msg = f"workspace {workspace_id} not found"
+            raise LookupError(msg)
+        actor = uow.actors.get_by_key(workspace.account_id, SYSTEM_ACTOR_KEY)
+        if actor is None:
+            msg = (
+                f"account {workspace.account_id} has no '{SYSTEM_ACTOR_KEY}' actor; "
+                "run: engine workspace seed"
+            )
+            raise LookupError(msg)
+        return actor.id
+
     def _persist(
         self,
         story: Story,
@@ -288,6 +307,7 @@ class GenerateStage:
         body = content.body.strip()
         hook = first_sentence(body)
         with context.uow as uow:
+            actor_id = self._system_actor_id(uow, context.workspace_id)
             asset = uow.assets.find_slot(
                 context.workspace_id,
                 story_id=story.id,
@@ -317,7 +337,7 @@ class GenerateStage:
             revision = asset.next_revision(
                 body,
                 origin=RevisionOrigin.GENERATED,
-                actor_id=SYSTEM_ACTOR,
+                actor_id=actor_id,
                 previous=previous,
                 prompt_version=PROMPT_VERSION,
                 model=result.model,

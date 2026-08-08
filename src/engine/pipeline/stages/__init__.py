@@ -12,8 +12,13 @@ the phase that needs them:
              select      choose what to produce
              generate    brand voice x channel -> content assets
     Phase 4  render      Markdown and JSON output
-    Phase 5  distribute  export for publishing
-             measure     ingest performance data
+    Phase 5  export      approved assets -> per-channel publishable files
+
+Phase 5's other two capabilities -- recording that content was published, and
+recording what it achieved -- are deliberately *not* stages. A stage is
+unattended batch work; both of those are one human stating one fact, and the
+reason a fact was recorded has nowhere to live inside a batch. They are use
+cases in ``engine.cli.lifecycle`` instead (ADR 0018).
 """
 
 from __future__ import annotations

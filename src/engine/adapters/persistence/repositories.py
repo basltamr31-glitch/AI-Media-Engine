@@ -6,6 +6,7 @@ therefore impossible to forget: there is no query path that omits the scope.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -17,6 +18,8 @@ from engine.adapters.persistence.models import (
     ContentRevisionRow,
     EditorialScoreRow,
     EvidenceRow,
+    PerformanceMetricRow,
+    PublicationRow,
     RunRow,
     RunStageRow,
     SourceDocumentRow,
@@ -25,7 +28,14 @@ from engine.adapters.persistence.models import (
     StoryRow,
     WorkspaceRow,
 )
-from engine.core.domain.content import AssetSpend, ContentAsset, ContentRevision
+from engine.core.domain.content import (
+    AssetSpend,
+    ContentAsset,
+    ContentRevision,
+    PerformanceMetric,
+    Publication,
+    PublicationPerformance,
+)
 from engine.core.domain.enums import StoryStatus
 from engine.core.domain.ledger import RunLedger, StageRecord
 from engine.core.domain.source import Source, SourceDocument
@@ -830,6 +840,141 @@ class SqlAlchemyContentAssetRepository:
             .order_by(ContentRevisionRow.revision_number)
         )
         return [mappers.revision_from_row(row) for row in self._session.scalars(statement)]
+
+
+class SqlAlchemyPublicationRepository:
+    """Records of content going live. Insert and read only."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, publication: Publication) -> Publication:
+        self._session.add(mappers.publication_to_row(publication))
+        self._session.flush()
+        return publication
+
+    def get(self, workspace_id: str, publication_id: str) -> Publication | None:
+        row = self._session.get(PublicationRow, publication_id)
+        if row is None or row.workspace_id != workspace_id:
+            return None
+        return mappers.publication_from_row(row)
+
+    def list_for_asset(self, workspace_id: str, asset_id: str) -> list[Publication]:
+        statement = (
+            select(PublicationRow)
+            .where(
+                PublicationRow.workspace_id == workspace_id,
+                PublicationRow.asset_id == asset_id,
+            )
+            .order_by(PublicationRow.published_at)
+        )
+        return [mappers.publication_from_row(row) for row in self._session.scalars(statement)]
+
+    def list_recent(self, workspace_id: str, *, limit: int = 50) -> list[Publication]:
+        statement = (
+            select(PublicationRow)
+            .where(PublicationRow.workspace_id == workspace_id)
+            .order_by(PublicationRow.published_at.desc())
+            .limit(limit)
+        )
+        return [mappers.publication_from_row(row) for row in self._session.scalars(statement)]
+
+    def count_for_workspace(self, workspace_id: str) -> int:
+        total = self._session.scalar(
+            select(func.count())
+            .select_from(PublicationRow)
+            .where(PublicationRow.workspace_id == workspace_id)
+        )
+        return int(total or 0)
+
+
+class SqlAlchemyPerformanceMetricRepository:
+    """Engagement observations, and the read model over them."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, metric: PerformanceMetric) -> PerformanceMetric:
+        self._session.add(mappers.metric_to_row(metric))
+        self._session.flush()
+        return metric
+
+    def list_for_publication(
+        self, workspace_id: str, publication_id: str
+    ) -> list[PerformanceMetric]:
+        statement = (
+            select(PerformanceMetricRow)
+            .where(
+                PerformanceMetricRow.workspace_id == workspace_id,
+                PerformanceMetricRow.publication_id == publication_id,
+            )
+            .order_by(PerformanceMetricRow.captured_at, PerformanceMetricRow.metric)
+        )
+        return [mappers.metric_from_row(row) for row in self._session.scalars(statement)]
+
+    def performance(self, workspace_id: str, *, limit: int = 50) -> list[PublicationPerformance]:
+        """Publications with their latest reading per metric, newest post first.
+
+        Two queries and a fold rather than one query with a window function:
+        the fold is ordered oldest-first so a later observation overwrites an
+        earlier one, which is the same rule a window function would apply and
+        stays readable on every database the schema targets.
+        """
+        publications = self.__publications(workspace_id, limit)
+        if not publications:
+            return []
+
+        readings = self.__readings(workspace_id, [row.id for row in publications])
+        return [
+            PublicationPerformance(
+                publication_id=row.id,
+                asset_id=row.asset_id,
+                channel_key=row.channel_key,
+                published_at=row.published_at,
+                metrics=readings[row.id].values,
+                observations=readings[row.id].observations,
+                last_captured_at=readings[row.id].last_captured_at,
+            )
+            for row in publications
+        ]
+
+    def __publications(self, workspace_id: str, limit: int) -> list[PublicationRow]:
+        statement = (
+            select(PublicationRow)
+            .where(PublicationRow.workspace_id == workspace_id)
+            .order_by(PublicationRow.published_at.desc())
+            .limit(limit)
+        )
+        return list(self._session.scalars(statement))
+
+    def __readings(self, workspace_id: str, publication_ids: list[str]) -> dict[str, _Readings]:
+        statement = (
+            select(PerformanceMetricRow)
+            .where(
+                PerformanceMetricRow.workspace_id == workspace_id,
+                PerformanceMetricRow.publication_id.in_(publication_ids),
+            )
+            .order_by(PerformanceMetricRow.captured_at)
+        )
+        readings: dict[str, _Readings] = {
+            publication_id: _Readings() for publication_id in publication_ids
+        }
+        for row in self._session.scalars(statement):
+            reading = readings[row.publication_id]
+            reading.values[row.metric] = row.value
+            reading.observations += 1
+            if reading.last_captured_at is None or row.captured_at > reading.last_captured_at:
+                reading.last_captured_at = row.captured_at
+        return readings
+
+
+@dataclass
+class _Readings:
+    """Accumulator for the metric fold. Private to the repository."""
+
+    values: dict[str, float] = field(default_factory=dict)
+    observations: int = 0
+    last_captured_at: datetime | None = None
 
 
 class SqlAlchemyRunRepository:

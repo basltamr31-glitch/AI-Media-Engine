@@ -577,6 +577,82 @@ class ContentRevisionRow(Base):
     )
 
 
+class PublicationRow(Base):
+    """Record that an asset went live somewhere. Append-only.
+
+    The engine records publication rather than performing it (ADR 0018), so a
+    row here is a human's statement that the post exists at ``external_url``.
+    ``published_at`` is when it went live, which is not when the row was
+    written -- backfilling last week's posts must not distort the timeline the
+    engagement report reads.
+    """
+
+    __tablename__ = "publications"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    asset_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("content_assets.id", ondelete="CASCADE"), nullable=False
+    )
+    channel_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    published_at: Mapped[datetime] = mapped_column(nullable=False)
+    published_by: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+
+    __table_args__ = (
+        # One live post per asset and channel. Recording the same publication
+        # twice would double every metric that later joins through it, and a
+        # silently doubled engagement number is worse than a missing one.
+        UniqueConstraint("asset_id", "channel_key", name="uq_publications_asset_id_channel_key"),
+        Index("ix_publications_workspace_id_published_at", "workspace_id", "published_at"),
+    )
+
+
+class PerformanceMetricRow(Base):
+    """One engagement observation for a publication. Append-only.
+
+    Observations are not corrected in place: a post's like count on Tuesday and
+    its count on Friday are two facts, not one fact revised. Keeping both is
+    what makes growth over time recoverable, and overwriting would collapse the
+    only series the feedback loop can learn from.
+    """
+
+    __tablename__ = "performance_metrics"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    publication_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("publications.id", ondelete="CASCADE"), nullable=False
+    )
+    metric: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(nullable=False)
+    collected_by: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+
+    __table_args__ = (
+        # The natural key of an observation. Re-entering the same reading for
+        # the same moment is a correction, not a second data point; anything
+        # later is a new one.
+        UniqueConstraint(
+            "publication_id",
+            "metric",
+            "captured_at",
+            name="uq_performance_metrics_publication_metric_captured",
+        ),
+        Index(
+            "ix_performance_metrics_workspace_id_publication_id",
+            "workspace_id",
+            "publication_id",
+        ),
+        Index("ix_performance_metrics_workspace_id_captured_at", "workspace_id", "captured_at"),
+    )
+
+
 class RunRow(Base):
     """One pipeline execution."""
 

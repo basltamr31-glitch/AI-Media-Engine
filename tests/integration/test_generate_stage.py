@@ -14,7 +14,7 @@ import pytest
 
 from engine.adapters.generation.prompts import PROMPT_VERSION, GeneratedContent
 from engine.core.domain.content import BrandProfile, RevisionOrigin
-from engine.core.domain.enums import StoryStatus
+from engine.core.domain.enums import ActorKind, StoryStatus
 from engine.core.domain.ledger import RunLedger
 from engine.core.domain.pack import ChannelDef, DomainPack, ProductDef, ProductKind
 from engine.core.domain.story import EnrichedSource, Story
@@ -228,6 +228,32 @@ class TestRevisions:
         assert revisions[0].revision_number == 1
         assert revisions[0].origin is RevisionOrigin.GENERATED
         assert revisions[0].prompt_version == PROMPT_VERSION
+
+    def test_the_author_is_the_real_system_actor(
+        self, uow, clock, settings, persisted_workspace, system_actor
+    ):
+        """Attribution must resolve to an actor row, not to a plausible string.
+
+        The edit-delta dataset is built by joining revisions to actors to tell a
+        machine draft from a human rewrite. A hard-coded id looks correct in
+        every test that only reads it back, and joins to nothing.
+        """
+        store_selected_story(uow, persisted_workspace, clock)
+        stage = GenerateStage(
+            llm=answering(),
+            pack=a_pack(channels=[a_pack().channels[0]]),
+            brand_profiles=brands(persisted_workspace.id, "en"),
+            model="test-model",
+        )
+
+        run_stage(uow, clock, settings, persisted_workspace.id, stage)
+
+        asset = assets_of(uow, persisted_workspace.id)[0]
+        with uow as active:
+            revision = active.assets.list_revisions(persisted_workspace.id, asset.id)[0]
+            author = active.actors.get(system_actor.account_id, revision.actor_id)
+        assert revision.actor_id == system_actor.id
+        assert author is not None and author.kind is ActorKind.SYSTEM
 
     def test_regenerating_appends_rather_than_duplicating(
         self, uow, clock, settings, persisted_workspace

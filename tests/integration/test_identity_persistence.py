@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from engine.adapters.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from engine.core.domain.account import Account, Actor, Membership
-from engine.core.domain.enums import ActorKind, SubjectType
+from engine.core.domain.enums import ActorKind, MembershipRole, SubjectType
 from engine.core.domain.signal import (
     SIGNAL_CONTENT_EDITED,
     SIGNAL_ENGAGEMENT,
@@ -106,16 +106,33 @@ class TestActorRepository:
             assert active.actors.get(system_actor.account_id, system_actor.id) is not None
 
     def test_membership_round_trips(self, uow: SqlAlchemyUnitOfWork, system_actor: Actor):
+        """Provisioning already made system and owner members; add a third.
+
+        One membership per (account, actor) is a unique constraint, so this adds
+        an editor rather than a duplicate -- which is also the shape the review
+        workflow needs when more than one person reviews.
+        """
+        editor = Actor(
+            account_id=system_actor.account_id,
+            key="editor",
+            display_name="Editor",
+            kind=ActorKind.HUMAN,
+        )
         with uow as active:
+            before = {m.actor_id for m in active.actors.list_memberships(system_actor.account_id)}
+            active.actors.add(editor)
             active.actors.add_membership(
-                Membership(account_id=system_actor.account_id, actor_id=system_actor.id)
+                Membership(account_id=editor.account_id, actor_id=editor.id)
             )
             active.commit()
 
         with uow as active:
             memberships = active.actors.list_memberships(system_actor.account_id)
-        assert len(memberships) == 1
-        assert memberships[0].actor_id == system_actor.id
+        by_actor = {membership.actor_id: membership for membership in memberships}
+        assert by_actor.keys() == before | {editor.id}
+        assert system_actor.id in by_actor
+        assert by_actor[system_actor.id].role is MembershipRole.OWNER
+        assert by_actor[editor.id].role is MembershipRole.EDITOR
 
 
 class TestSignalRepository:

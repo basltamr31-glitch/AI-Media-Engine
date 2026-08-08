@@ -19,8 +19,10 @@ from engine.adapters.clock import FixedClock
 from engine.adapters.persistence.models import Base
 from engine.adapters.persistence.session import create_db_engine, create_session_factory
 from engine.adapters.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from engine.cli.provisioning import ensure_account
+from engine.cli.provisioning import system_actor as provisioning_system_actor
 from engine.core.domain.account import Account, Actor
-from engine.core.domain.enums import ActorKind, SourceKind
+from engine.core.domain.enums import SourceKind
 from engine.core.domain.language import ARABIC, ENGLISH
 from engine.core.domain.source import Source
 from engine.core.domain.workspace import Workspace
@@ -69,9 +71,16 @@ def account() -> Account:
 
 
 @pytest.fixture
-def persisted_account(uow: SqlAlchemyUnitOfWork, account: Account) -> Account:
+def persisted_account(uow: SqlAlchemyUnitOfWork, account: Account, clock: FixedClock) -> Account:
+    """Provisioned through the production path, system actor included.
+
+    Adding the account row directly would allow a state the application cannot
+    produce -- an account with no system actor -- and every test attributing an
+    automated action would then be testing against a fiction.
+    """
     with uow as active:
         active.accounts.add(account)
+        ensure_account(active, slug=account.slug, name=account.name, clock=clock)
         active.commit()
     return account
 
@@ -79,16 +88,8 @@ def persisted_account(uow: SqlAlchemyUnitOfWork, account: Account) -> Account:
 @pytest.fixture
 def system_actor(uow: SqlAlchemyUnitOfWork, persisted_account: Account) -> Actor:
     """Every account has one; automated actions are attributed to it."""
-    actor = Actor(
-        account_id=persisted_account.id,
-        key="system",
-        display_name="System",
-        kind=ActorKind.SYSTEM,
-    )
     with uow as active:
-        active.actors.add(actor)
-        active.commit()
-    return actor
+        return provisioning_system_actor(active, persisted_account.id)
 
 
 @pytest.fixture

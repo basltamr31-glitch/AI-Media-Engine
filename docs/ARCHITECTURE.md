@@ -83,7 +83,7 @@ Workspace ─┬─ Source ──── SourceDocument ──── StoryCandida
 | `BrandProfile` | Voice as data. The change that makes multi-tenancy possible. |
 | `ChannelDef` | Platform constraints, declared by the pack. Not tenant-scoped — facts about the platform (ADR 0015). |
 | `ContentAsset` | One artifact per story × channel × language, versioned, state-machined. |
-| `Publication` | Immutable record of going live. |
+| `Publication` | Immutable record of going live. Recorded by a human, not performed (ADR 0018). |
 | `PerformanceMetric` | Closes the feedback loop. |
 | `RunLedger` / `StageRecord` | Observability and unit economics. |
 
@@ -98,6 +98,9 @@ Workspace ─┬─ Source ──── SourceDocument ──── StoryCandida
 - A `ScoringProfile`'s weights must sum to 1.0, and every key must be a ranking
   signal the active pack declares → ranking stays interpretable (ADR 0016).
 - `TenantScoped` carries `workspace_id` → isolation is structural.
+- `Publication` and `PerformanceMetric` have no update mapper and no update
+  repository method → an outcome cannot be quietly revised, so a correction
+  is a second observation and the series survives.
 
 ---
 
@@ -111,6 +114,13 @@ class Stage(Protocol):
     def name(self) -> str: ...
     def run(self, context: RunContext) -> StageResult: ...
 ```
+
+Phase 5's other two capabilities -- recording that content was published, and
+recording what it achieved -- are deliberately *not* stages, which is why the
+table below stops at `export`. A stage is unattended batch work over everything
+eligible; both of those are one human stating one fact, and the reason a fact
+was recorded has nowhere to live inside a batch loop. They are use cases in
+`engine.cli.lifecycle` (ADR 0018), alongside approve, reject and edit.
 
 `PipelineRunner` executes stages in order and, for each one, records start,
 finish, item counts, token usage, cost and errors — committed incrementally, so
@@ -128,7 +138,7 @@ Planned stage sequence:
 | 2 | `extract`, `resolve` (clustering + primary-source enrichment) |
 | 3 | `editorial`, `generate` |
 | 4 | `render` |
-| 5 | `distribute`, `measure` |
+| 5 | `export` |
 
 ---
 
@@ -220,6 +230,7 @@ way any third-party package would declare one. See
 | Feedback-loop schema | The dataset that becomes the moat |
 | Model-agnostic `LLMPort` | Provider churn is an adapter change |
 | Explicit review state machine | Accountability that clients require |
+| Edit deltas measured at capture | The preference dataset, as a by-product of review |
 
 ---
 
@@ -228,6 +239,12 @@ way any third-party package would declare one. See
 Auto-publishing, image generation, video rendering, SEO blog drafts, a web UI,
 authentication, billing and fine-tuning. Each is postponed for a stated reason
 in the roadmap.
+
+Auto-publishing is the one with its own decision record rather than a roadmap
+line: the engine *records* publication and never performs it
+(ADR 0018). That is not a deferral -- the feedback loop needs the link between
+an asset and an outcome, and posting on someone's behalf is neither necessary
+for it nor where any differentiation lies.
 
 The discipline: **postpone features, never postpone architecture.** Adding a
 feature later is a sprint. Retrofitting tenancy, provenance or cost accounting
