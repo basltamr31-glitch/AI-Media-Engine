@@ -36,6 +36,7 @@ from engine.core.domain.health import (
     HealthReport,
     HealthStatus,
     assess,
+    is_rehearsal,
     window_start,
 )
 from engine.core.domain.ledger import RunLedger
@@ -211,6 +212,7 @@ def status(
     age = datetime.now(UTC) - last.started_at
     console.print(
         f"Last scheduled run {last.status.value} {_humanise(age)} ago  [dim]({last.id})[/dim]"
+        + ("  [yellow](dry run -- stored nothing)[/yellow]" if is_rehearsal(last) else "")
     )
 
     table = Table(title=f"Scheduled runs, last {window} days")
@@ -221,9 +223,13 @@ def status(
     for entry in scheduled[:10]:
         duration = entry.duration_seconds
         style = "green" if entry.status is RunStatus.SUCCEEDED else "red"
+        # A dry run is marked rather than hidden. It succeeded, and pretending
+        # otherwise would be its own kind of lie -- but shown identically to a
+        # real run it reads as output that was never produced.
+        label = entry.status.value + (" (dry)" if is_rehearsal(entry) else "")
         table.add_row(
             entry.started_at.strftime("%Y-%m-%d %H:%M:%S"),
-            f"[{style}]{entry.status.value}[/{style}]",
+            f"[{style}]{label}[/{style}]",
             f"{duration:.2f}s" if duration is not None else "-",
             f"${entry.cost_usd:.4f}",
         )

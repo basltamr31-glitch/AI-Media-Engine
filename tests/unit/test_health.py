@@ -14,6 +14,7 @@ from engine.core.domain.enums import RunStatus
 from engine.core.domain.health import (
     HealthStatus,
     assess,
+    is_rehearsal,
     window_start,
 )
 from engine.core.domain.ledger import RunLedger
@@ -26,6 +27,7 @@ def a_run(
     hours_ago: float = 1.0,
     status: RunStatus = RunStatus.SUCCEEDED,
     error: str | None = None,
+    dry_run: bool = False,
 ) -> RunLedger:
     return RunLedger(
         workspace_id="ws_test",
@@ -35,6 +37,7 @@ def a_run(
         started_at=NOW - timedelta(hours=hours_ago),
         finished_at=NOW - timedelta(hours=hours_ago),
         error=error,
+        meta={"dry_run": dry_run},
     )
 
 
@@ -168,3 +171,55 @@ class TestOrderingAndInputs:
 class TestWindow:
     def test_the_window_start_is_days_back(self):
         assert window_start(NOW, days=7) == NOW - timedelta(days=7)
+
+
+class TestDryRuns:
+    """A rehearsal stores nothing and succeeds reliably.
+
+    That combination is what makes it dangerous: a scheduled command left on
+    --dry-run produces an unbroken record of green while the engine publishes
+    nothing at all. It has to be excluded from the numbers, and the situation
+    has to be named rather than merely omitted.
+    """
+
+    def test_a_dry_run_is_identified(self):
+        assert is_rehearsal(a_run(dry_run=True)) is True
+        assert is_rehearsal(a_run()) is False
+
+    def test_a_run_with_no_metadata_is_not_a_rehearsal(self):
+        """Absent metadata predates the flag; it must not read as a dry run."""
+        run = a_run()
+        run.meta.clear()
+
+        assert is_rehearsal(run) is False
+
+    def test_only_dry_runs_is_not_healthy(self):
+        report = assess([a_run(dry_run=True), a_run(hours_ago=25, dry_run=True)], now=NOW)
+
+        assert report.status is HealthStatus.FAILING
+        assert report.is_healthy is False
+
+    def test_it_says_what_to_change(self):
+        report = assess([a_run(dry_run=True)], now=NOW)
+
+        assert report.findings[0].code == "only_dry_runs"
+        assert "--dry-run" in report.findings[0].summary
+
+    def test_dry_runs_do_not_count_towards_the_total(self):
+        report = assess([a_run(dry_run=True)], now=NOW)
+
+        assert report.runs_considered == 0
+
+    def test_dry_runs_are_ignored_when_real_runs_exist(self):
+        report = assess([a_run(hours_ago=1, dry_run=True), a_run(hours_ago=2)], now=NOW)
+
+        assert report.status is HealthStatus.HEALTHY
+        assert report.runs_considered == 1
+
+    def test_a_rehearsal_cannot_mask_staleness(self):
+        """The real failure: dry-running daily while nothing has published."""
+        runs = [a_run(hours_ago=1, dry_run=True), a_run(hours_ago=200)]
+
+        report = assess(runs, now=NOW)
+
+        assert report.status is HealthStatus.STALE

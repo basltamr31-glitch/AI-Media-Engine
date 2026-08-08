@@ -87,6 +87,14 @@ its own timer:
 `STALE` outranks everything else. A perfect success rate from last week says
 nothing about whether anything ran this morning.
 
+**Dry runs do not count.** A rehearsal stores nothing and succeeds reliably,
+which is exactly what makes it dangerous here: a scheduled command left on
+`--dry-run` would otherwise produce an unbroken record of green while the engine
+published nothing at all. Health excludes them from every number, and reports
+`FAILING` with `only_dry_runs` when they are all there is. `status` marks them
+`(dry)` rather than hiding them — they did happen, they just did not produce
+anything.
+
 Add `--alert` to have an unhealthy verdict also raise an alert. Without it,
 `health` only reports — a monitor polls this often, and checking is not the
 same as reporting.

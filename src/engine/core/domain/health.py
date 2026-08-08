@@ -35,6 +35,17 @@ DEFAULT_MAX_AGE_HOURS: Final = 36.0
 #: threshold is visible next to what it means.
 DEFAULT_MAX_FAILURE_RATE: Final = 0.5
 
+#: Run-ledger metadata key marking a rehearsal. A dry run exercises the stages
+#: and stores nothing, so it says nothing about whether the engine is producing
+#: anything -- and it succeeds reliably, which is precisely what makes it
+#: dangerous here.
+DRY_RUN_META_KEY: Final = "dry_run"
+
+
+def is_rehearsal(run: RunLedger) -> bool:
+    """Whether this run deliberately stored nothing."""
+    return bool(run.meta.get(DRY_RUN_META_KEY))
+
 
 class HealthStatus(StrEnum):
     """Ordered worst-last, so the overall verdict is a ``max``."""
@@ -98,7 +109,8 @@ def assess(
     """Judge a workspace's recent scheduled runs.
 
     ``runs`` should already be filtered to the trigger and window of interest;
-    this decides what the numbers *mean*, not which rows to read.
+    this decides what the numbers *mean*, not which rows to read. Whether a
+    rehearsal counts is a question about meaning, so it is settled here.
     """
     if not runs:
         return HealthReport(
@@ -115,7 +127,31 @@ def assess(
             ],
         )
 
-    ordered = sorted(runs, key=lambda run: run.started_at, reverse=True)
+    # Dry runs are excluded from every number below. A rehearsal stores nothing
+    # and succeeds reliably, so counting one as evidence of health means a cron
+    # line left on --dry-run reports green forever while producing nothing --
+    # the exact failure this module exists to catch, wearing a success badge.
+    rehearsals = [run for run in runs if is_rehearsal(run)]
+    real = [run for run in runs if not is_rehearsal(run)]
+
+    if not real:
+        return HealthReport(
+            status=HealthStatus.FAILING,
+            findings=[
+                HealthFinding(
+                    code="only_dry_runs",
+                    status=HealthStatus.FAILING,
+                    summary=(
+                        f"All {len(rehearsals)} recent scheduled run(s) were dry runs, "
+                        "which store nothing. Remove --dry-run from the scheduled command."
+                    ),
+                )
+            ],
+            runs_considered=0,
+            last_run_at=max(run.started_at for run in rehearsals),
+        )
+
+    ordered = sorted(real, key=lambda run: run.started_at, reverse=True)
     latest = ordered[0]
     age_hours = (now - latest.started_at).total_seconds() / 3600.0
     failures = [run for run in ordered if run.status is RunStatus.FAILED]
