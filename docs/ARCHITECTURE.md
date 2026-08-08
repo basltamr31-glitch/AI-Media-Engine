@@ -81,7 +81,7 @@ Workspace ─┬─ Source ──── SourceDocument ──── StoryCandida
 | `Evidence` | Claim ↔ source binding. The provenance ledger. |
 | `EditorialScore` | Explainable ranking with per-signal components. |
 | `BrandProfile` | Voice as data. The change that makes multi-tenancy possible. |
-| `ChannelSpec` | Platform constraints. Not tenant-scoped — facts about the platform. |
+| `ChannelDef` | Platform constraints, declared by the pack. Not tenant-scoped — facts about the platform (ADR 0015). |
 | `ContentAsset` | One artifact per story × channel × language, versioned, state-machined. |
 | `Publication` | Immutable record of going live. |
 | `PerformanceMetric` | Closes the feedback loop. |
@@ -95,7 +95,8 @@ Workspace ─┬─ Source ──── SourceDocument ──── StoryCandida
   story we have only read about second-hand.
 - `ContentAsset.transition_to` refuses illegal transitions → nothing reaches a
   channel without passing the human review gate.
-- `ScoringWeights` must sum to 1.0 → ranking stays interpretable.
+- A `ScoringProfile`'s weights must sum to 1.0, and every key must be a ranking
+  signal the active pack declares → ranking stays interpretable (ADR 0016).
 - `TenantScoped` carries `workspace_id` → isolation is structural.
 
 ---
@@ -156,15 +157,23 @@ discipline is demonstrated rather than claimed.
 
 ## Policy as data
 
-Brand voice, editorial weights, channel rules and source lists live in
-`config/*.yaml`, validated on load.
+Brand voice, editorial weights and source lists live in `config/*.yaml`,
+validated on load.
 
 ```
 config/
 ├── workspaces/default.yaml        tenant + sources + editorial policy
 ├── brand_profiles/default_ar.yaml Arabic voice
-├── brand_profiles/default_en.yaml English voice
-└── channel_specs/{instagram,x,linkedin}.yaml
+└── brand_profiles/default_en.yaml English voice
+```
+
+Channel rules are **not** here. They moved into the domain pack with ADR 0015:
+X's character limit is a fact about X, not a tenant preference, so it belongs
+with the vocabulary rather than with the customer.
+
+```
+packs/ai-news/pack.yaml            taxonomy, products, channels, ranking signals
+evals/golden/*.yaml                golden cases; evals/baseline.json the expectation
 ```
 
 `engine workspace seed` reconciles the database with these files idempotently:
@@ -179,9 +188,11 @@ would be a deployment — the single change that most directly blocks monetisati
 | Seam | Contract | Populated in |
 |---|---|---|
 | `SourceFetcher` | one transport (email, RSS, API) → `SourceDocument` | Phase 1 |
-| `DocumentParser` | one format → `StoryCandidate[]` | Phase 1 |
+| `DocumentParser` | one format → `StoryCandidate[]` | Phase 2 |
 | `ParserRegistry` / `FetcherRegistry` | key → implementation | Phase 1 |
-| `LLMPort` | structured generation with usage accounting | Phase 3 |
+| `engine.fetchers` / `engine.parsers` entry points | installed package → registry entry | Phase 1.5 |
+| `Source.config` | per-source options, passed to fetcher and parser alike | Phase 2 |
+| `LLMPort` | structured generation with usage accounting | Phase 3 — local (Ollama) and hosted (Anthropic) implementations, selected by config |
 | `Stage` | one unit of pipeline work | every phase |
 | `Clock` | injectable time | now |
 | `UnitOfWork` + repositories | transactional persistence | now |
@@ -189,6 +200,11 @@ would be a deployment — the single change that most directly blocks monetisati
 Adding a newsletter is: write a parser, register it, add a config row. The
 pipeline never learns the word "TLDR", and losing any single source degrades
 quality instead of stopping production.
+
+Registration goes through entry points (ADR 0017), so "register it" does not
+mean editing this repository — the engine's own fetchers are declared the same
+way any third-party package would declare one. See
+[`docs/PLUGINS.md`](PLUGINS.md).
 
 ---
 

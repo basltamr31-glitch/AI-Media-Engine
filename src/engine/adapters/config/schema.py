@@ -14,7 +14,8 @@ from typing import Any
 from pydantic import Field
 
 from engine.core.domain.base import DomainModel
-from engine.core.domain.enums import Language, SourceKind
+from engine.core.domain.enums import SourceKind
+from engine.core.domain.language import ARABIC, ENGLISH, LanguageTag
 from engine.core.domain.policy import EditorialPolicy
 
 
@@ -51,7 +52,7 @@ class WorkspaceConfig(DomainModel):
         description="Domain pack supplying taxonomy and vocabulary (ADR 0014).",
     )
     timezone: str = "UTC"
-    languages: list[Language] = Field(default_factory=lambda: [Language.AR, Language.EN])
+    languages: list[LanguageTag] = Field(default_factory=lambda: [ARABIC, ENGLISH])
     sources: list[SourceConfig] = Field(default_factory=list)
     editorial: EditorialPolicy = Field(default_factory=EditorialPolicy)
     brand_profiles: list[str] = Field(

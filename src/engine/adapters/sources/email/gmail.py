@@ -16,6 +16,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Final, Protocol, runtime_checkable
 
+from engine.adapters.plugins.context import PluginContext
+from engine.adapters.sources.email.oauth import credential_store_from
 from engine.adapters.sources.parsing import parse_datetime, truncate
 from engine.core.domain.enums import SourceKind
 from engine.core.domain.source import Source, SourceDocument, compute_content_hash
@@ -288,3 +290,18 @@ def _resolve_published_at(headers: dict[str, str], payload: dict[str, Any]) -> d
     if internal := payload.get("internalDate"):
         return parse_datetime(int(internal))
     return None
+
+
+def build_fetcher(context: PluginContext) -> GmailFetcher:
+    """Entry-point factory (group ``engine.fetchers``, name ``email``).
+
+    The store is built now but read lazily: constructing the registry must not
+    require Google credentials, because a workspace with only RSS sources has
+    to work on a machine that has never run ``engine sources auth``.
+    """
+    store = credential_store_from(context)
+    return GmailFetcher(
+        client_factory=lambda: GoogleApiGmailClient(store.load()),
+        clock=context.clock,
+        lookback_days=context.settings.ingest_lookback_days,
+    )

@@ -182,3 +182,122 @@ class TestShippedPack:
         benchmarks = pack.node("benchmarks")
         assert benchmarks is not None
         assert benchmarks.parent == "research"
+
+    def test_ai_news_pack_defines_the_shipped_channels(self):
+        """Channels moved out of config/channel_specs/ and into the pack (ADR 0015)."""
+        from engine.cli.container import find_project_root
+
+        pack = FilesystemPackLoader(find_project_root() / "packs").load("ai-news")
+        assert pack.channel_keys == {"instagram", "x", "linkedin"}
+
+    def test_x_channel_reflects_platform_limits(self):
+        from engine.cli.container import find_project_root
+
+        pack = FilesystemPackLoader(find_project_root() / "packs").load("ai-news")
+        channel = pack.channel("x")
+        assert channel is not None
+        assert channel.max_characters == 280
+        assert channel.max_hashtags <= 2
+
+    def test_ai_news_pack_defines_the_shipped_products(self):
+        from engine.cli.container import find_project_root
+
+        pack = FilesystemPackLoader(find_project_root() / "packs").load("ai-news")
+        assert pack.product_keys >= {"social_post", "caption", "reel_script", "image_prompt"}
+
+
+class TestOpenVocabularies:
+    """Products and channels are pack data, not enums (ADR 0015)."""
+
+    def test_a_pack_can_define_products_no_enum_ever_contained(self, tmp_path):
+        """A research pack needs 'digest' and 'alert'; neither is in any enum."""
+        write_pack(
+            tmp_path,
+            "research",
+            """
+key: research
+version: 1
+name: Literature Monitoring
+products:
+  - {key: weekly_digest, name: Weekly digest, kind: post}
+  - {key: new_paper_alert, name: New paper alert, kind: attachment}
+""",
+        )
+        pack = FilesystemPackLoader(tmp_path).load("research")
+        assert pack.product_keys == {"weekly_digest", "new_paper_alert"}
+
+    def test_a_pack_can_define_a_channel_the_engine_has_never_heard_of(self, tmp_path):
+        write_pack(
+            tmp_path,
+            "chat",
+            """
+key: chat
+version: 1
+name: Chat
+products:
+  - {key: alert, name: Alert, kind: post}
+channels:
+  - key: slack
+    name: Slack
+    max_characters: 4000
+    supports_hashtags: false
+    supports_links: true
+    preferred_products: [alert]
+""",
+        )
+        channel = FilesystemPackLoader(tmp_path).load("chat").channel("slack")
+        assert channel is not None
+        assert channel.max_characters == 4000
+
+    def test_duplicate_product_keys_are_rejected(self, tmp_path):
+        write_pack(
+            tmp_path,
+            "dupe",
+            """
+key: dupe
+version: 1
+name: D
+products:
+  - {key: post, name: One, kind: post}
+  - {key: post, name: Two, kind: post}
+""",
+        )
+        with pytest.raises(PackLoadError, match="duplicate product keys"):
+            FilesystemPackLoader(tmp_path).load("dupe")
+
+    def test_a_channel_preferring_an_unknown_product_is_rejected(self, tmp_path):
+        """Caught at load time rather than during generation, far from the typo."""
+        write_pack(
+            tmp_path,
+            "bad",
+            """
+key: bad
+version: 1
+name: B
+products:
+  - {key: post, name: Post, kind: post}
+channels:
+  - key: somewhere
+    name: Somewhere
+    max_characters: 100
+    supports_hashtags: false
+    preferred_products: [ghost]
+""",
+        )
+        with pytest.raises(PackLoadError, match="unknown product"):
+            FilesystemPackLoader(tmp_path).load("bad")
+
+    def test_hashtag_support_without_a_limit_is_rejected(self, tmp_path):
+        write_pack(
+            tmp_path,
+            "bad",
+            """
+key: bad
+version: 1
+name: B
+channels:
+  - {key: c, name: C, max_characters: 100, supports_hashtags: true, max_hashtags: 0}
+""",
+        )
+        with pytest.raises(PackLoadError, match="supports hashtags"):
+            FilesystemPackLoader(tmp_path).load("bad")

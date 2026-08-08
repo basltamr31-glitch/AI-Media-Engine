@@ -1,7 +1,7 @@
 # Architecture Diagrams
 
-The architecture as built and as planned through Phase 2. Four views: two C4
-levels, the domain model, and the runtime sequence.
+The architecture as built through Phase 4, and as planned beyond it. Four
+views: two C4 levels, the domain model, and the runtime sequence.
 
 Entities shown are either implemented or scheduled in the current roadmap.
 Ideas considered and deferred are recorded in `FUTURE_IDEAS.md` and deliberately
@@ -251,66 +251,101 @@ erDiagram
 
 ## 4. Pipeline sequence
 
-One daily run. Note three things: the cost ceiling is checked after every stage,
-enrichment happens **after** ranking so only the shortlist is fetched, and every
-stage emits signals as it goes.
+One daily run, as built. Each stage is a separate `engine <stage> run`; the
+runner records a `StageRecord` for every one and checks the cost ceiling
+between them.
+
+Two things are worth reading carefully, because both differ from the obvious
+design:
+
+- **Enrichment runs before ranking, not after.** Selection refuses any story
+  without a primary source read first-hand, so a story that was never enriched
+  can never be chosen — ranking it first would be ranking candidates that are
+  ineligible by definition. Fetch cost is bounded instead by a per-run ceiling
+  (25 stories) and an attempt count that retires dead links, not by score.
+- **The cost ceiling is checked twice.** Between stages by the runner, and
+  again *before each model call* inside generation — three stories across three
+  channels and two languages is eighteen calls inside one stage, and a
+  between-stages check would notice the overspend only after it happened.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant CLI
     participant Runner as Pipeline Runner
-    participant Extract
-    participant Resolve
-    participant Rank
-    participant Enrich
-    participant Caps as Capability Adapter
+    participant Stage
+    participant Ports as Ports (fetcher / parser / extractor / LLM)
     participant Repo as Repositories
-    participant Log as Signal log
+    participant FS as output/
 
-    CLI->>Runner: run(workspace, pipeline_def)
+    CLI->>Runner: run(workspace, stages)
     Runner->>Repo: create RunLedger (status=running)
 
     rect rgb(240, 246, 252)
-    note over Runner,Log: ① EXTRACT — documents to candidates
-    Runner->>Extract: run(context)
-    Extract->>Repo: unprocessed documents
-    Extract->>Caps: parse(document)
-    Extract->>Repo: store candidates
-    Extract-->>Runner: StageResult(in, out, cost)
-    Runner->>Repo: update StageRecord
+    note over Runner,Repo: INGEST — sources to SourceDocument
+    Runner->>Stage: ingest
+    Stage->>Ports: SourceFetcher.fetch(source)
+    Stage->>Repo: store documents (deduped by content hash)
     end
 
     rect rgb(240, 246, 252)
-    note over Runner,Log: ③ RESOLVE — cluster into stories
-    Runner->>Resolve: run(context)
-    Resolve->>Caps: score_similarity(a, b)
-    Caps-->>Resolve: breakdown + confidence
-    Resolve->>Repo: stories + evidence
-    Resolve->>Log: Signal(resolution.merged)
+    note over Runner,Repo: PARSE — documents to StoryCandidate
+    Runner->>Stage: parse
+    Stage->>Ports: DocumentParser.parse(document)
+    Stage->>Repo: store candidates
     end
 
     rect rgb(240, 246, 252)
-    note over Runner,Log: ④⑤ SIGNAL + RANK — cheap, cacheable, replayable
-    Runner->>Rank: run(context)
-    Rank->>Repo: SignalValue rows (feature matrix)
-    Rank->>Log: Signal(story.scored)
-    Rank-->>Runner: shortlist = top N + buffer
+    note over Runner,Repo: RESOLVE — cluster mentions into canonical stories
+    Runner->>Stage: resolve
+    Stage->>Repo: url_key / title_key matching, then fuzzy
+    Stage->>Repo: stories (status=resolved)
     end
-
-    Runner->>Runner: enforce cost ceiling
 
     rect rgb(255, 248, 240)
-    note over Runner,Enrich: ⑥ ENRICH — the ONLY network stage,<br/>gated by ranking: ~8 fetches, not ~60
-    Runner->>Enrich: run(context)
-    Enrich->>Caps: extract(primary_url)
-    Enrich->>Repo: EnrichedSource + PRIMARY evidence
+    note over Runner,Ports: ENRICH — the only stage that touches the open web<br/>bounded per run, one request at a time
+    Runner->>Stage: enrich
+    Stage->>Ports: HttpClient.get(primary_url)
+    Stage->>Ports: ContentExtractor.extract(html)
+    Stage->>Repo: EnrichedSource (status=enriched)
     end
 
-    Runner->>Repo: finalise RunLedger (status, cost, duration)
+    rect rgb(240, 246, 252)
+    note over Runner,Repo: EVIDENCE then SCORE — provenance, then explainable ranking
+    Runner->>Stage: evidence
+    Stage->>Repo: Evidence rows (primary / secondary / aggregator)
+    Runner->>Stage: score
+    Stage->>Repo: EditorialScore with per-signal components
+    end
+
+    rect rgb(240, 246, 252)
+    note over Runner,Repo: SELECT — the stage that says no
+    Runner->>Stage: select
+    Stage->>Repo: minimum score, primary source, daily quota
+    Stage->>Repo: status=selected, or a counted refusal reason
+    end
+
+    rect rgb(255, 248, 240)
+    note over Runner,Ports: GENERATE — brand voice x channel x language
+    Runner->>Stage: generate
+    loop per story, channel and language
+        Stage->>Stage: check spend against the ceiling
+        Stage->>Ports: LLMPort.generate_structured(request, schema)
+        Stage->>Repo: ContentAsset + append ContentRevision
+    end
+    end
+
+    rect rgb(240, 246, 252)
+    note over Runner,FS: RENDER — the hand-off out of the engine
+    Runner->>Stage: render
+    Stage->>Repo: selected stories, scores, evidence, current revisions
+    Stage->>FS: package.json (canonical) + post.md (the view of it)
+    end
+
+    Runner->>Repo: finalise RunLedger (status, usage, cost, duration)
     Runner-->>CLI: RunLedger
 
-    note over CLI,Log: Human review happens asynchronously in Phase 3.<br/>Edits are preserved as revisions and emitted as signals —<br/>which is how the system learns.
+    note over CLI,FS: Assets are created in `draft`. Human review is the gate,<br/>and the generated-to-published diff is kept as revisions —<br/>which is how the system will learn (Phase 5).
 ```
 
 ---
@@ -327,7 +362,11 @@ sequenceDiagram
 The load-bearing constraints, visible across all four:
 
 1. **The domain core has no I/O** (2) — enforced by `lint-imports`.
-2. **Stages never touch a model provider** (2) — capability adapters only.
-3. **Enrichment follows ranking** (4) — cost is gated by editorial judgment.
+2. **Stages never touch a model provider** (2) — only `LLMPort`, so which model
+   writes is configuration.
+3. **Nothing is generated from a source nobody read first-hand** (4) —
+   enrichment precedes selection, and selection refuses stories without a
+   primary source. This is the constraint that keeps the engine from becoming
+   a republisher.
 4. **Content revisions and signals are append-only** (3c) — what the model wrote
    is never overwritten by what the human published.

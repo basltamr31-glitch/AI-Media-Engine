@@ -77,3 +77,140 @@ meta:
   notes: >-
     First pack, and the reference example. Keep the taxonomy small: categories
     exist to inform ranking and routing, not to describe the world exhaustively.
+
+# --- Output products (milestone 1.5.5) --------------------------------------
+#
+# Replaces the ContentKind enum. `kind` selects engine behaviour -- whether a
+# product publishes on its own, attaches to something else, or feeds another
+# tool -- while the product itself is pack data. A research-monitoring pack
+# would define `digest` and `alert` here instead, with no code change.
+products:
+  - key: social_post
+    name: Social post
+    kind: post
+    description: A standalone post for one channel.
+
+  - key: caption
+    name: Caption
+    kind: attachment
+    description: Accompanies an image or video.
+
+  - key: hashtags
+    name: Hashtags
+    kind: attachment
+    description: Channel-appropriate tags, generated with the post they serve.
+
+  - key: reel_script
+    name: Reel script
+    kind: script
+    description: 30-60 seconds of spoken narration with on-screen beats.
+
+  - key: voiceover
+    name: Voice-over
+    kind: script
+    description: Narration text intended for text-to-speech or a human read.
+
+  - key: image_prompt
+    name: Image prompt
+    kind: prompt
+    description: Input to an image generator. We produce prompts, not images.
+
+# --- Channels (milestone 1.5.5) ---------------------------------------------
+#
+# Moved here from config/channel_specs/. These are facts about platforms, so
+# they belong with the pack rather than with tenant configuration. Adding
+# Threads or Bluesky is now an entry in this list.
+channels:
+  - key: linkedin
+    name: LinkedIn
+    max_characters: 3000
+    supports_hashtags: true
+    max_hashtags: 3
+    supports_links: true
+    preferred_products: [social_post]
+    format_notes:
+      - The first 3 lines appear before "see more" -- the argument must open there.
+      - Professional register; the audience here includes prospective clients.
+      - Short paragraphs, generous line breaks.
+      - Links in the post body are down-ranked; prefer naming the source and
+        adding the URL in the first comment.
+      - Close with a question only when it is a real one.
+
+  - key: x
+    name: X
+    max_characters: 280
+    supports_hashtags: true
+    max_hashtags: 2           # more than two measurably suppresses reach
+    supports_links: true
+    preferred_products: [social_post]
+    format_notes:
+      - One idea per post. If it needs two, it needs a thread.
+      - Put the claim first; the link goes last.
+      - Arabic characters count singly, but Arabic prose runs longer -- draft tighter.
+      - No engagement-bait openers ("Thread", "You won't believe").
+
+  - key: instagram
+    name: Instagram
+    max_characters: 2200
+    supports_hashtags: true
+    max_hashtags: 12          # platform allows 30; 8-12 performs better
+    supports_links: false     # no clickable links -- affects how sources are cited
+    preferred_products: [caption, hashtags, reel_script, image_prompt]
+    format_notes:
+      - The first 125 characters are visible before "more" -- the hook must land there.
+      - No clickable links; refer to "link in bio" and name the source explicitly.
+      - Line breaks between short paragraphs; dense blocks lose readers.
+      - Arabic captions render right-to-left; avoid mixed-direction runs mid-sentence.
+
+# --- Ranking signals (milestone 1.5.6) --------------------------------------
+#
+# Replaces the fixed five-field ScoringWeights. Adding a signal is an entry
+# here plus its computer in Phase 2 -- no domain model edit, no migration.
+#
+# `default_weight` values must sum to 1.0; a workspace inherits them unless it
+# declares its own `editorial.scoring.weights`. A cybersecurity pack would
+# instead declare cvss_severity and exploit_in_the_wild, and neither the
+# engine nor this pack would need to know about the other.
+ranking_signals:
+  - key: corroboration
+    name: Independent confirmations
+    normaliser: linear
+    default_weight: 0.30
+    parameters:
+      ceiling: 3            # three distinct sources is full marks
+    description: >-
+      Distinct sources reporting the same story. The strongest honest signal
+      that something actually matters, and the hardest to game.
+
+  - key: source_authority
+    name: Source authority
+    normaliser: passthrough
+    default_weight: 0.20
+    description: >-
+      Aggregate trust weight of the reporting sources. Already 0..1.
+
+  - key: recency
+    name: Recency
+    normaliser: decay
+    default_weight: 0.20
+    parameters:
+      half_life_hours: 24
+    description: Yesterday's launch is not today's story.
+
+  - key: prominence
+    name: Source prominence
+    normaliser: linear
+    default_weight: 0.15
+    parameters:
+      ceiling: 10           # position within the source document
+    description: >-
+      Where the source placed it. Editors rank by ordering, and a newsletter's
+      lead item is its own editorial judgement, freely given.
+
+  - key: audience_fit
+    name: Audience fit
+    normaliser: passthrough
+    default_weight: 0.15
+    description: >-
+      Overlap with the workspace's priority topics. Later: fitted against
+      measured engagement rather than declared interest.

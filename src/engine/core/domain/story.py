@@ -36,6 +36,10 @@ class StoryCandidate(TenantScoped):
     id: str = Field(default_factory=lambda: new_id(IdPrefix.CANDIDATE))
     document_id: str
     source_id: str
+    story_id: str | None = Field(
+        default=None,
+        description="Set once resolution clusters this mention into a canonical story.",
+    )
     headline: str
     summary: str | None = None
     primary_url: str | None = Field(
@@ -127,6 +131,10 @@ class Story(TenantScoped):
         description="Organisations, models, people. Powers dedupe and interest matching.",
     )
     enrichment: EnrichedSource | None = None
+    selected_at: datetime | None = Field(
+        default=None,
+        description="When editorial chose this story for production. None means not chosen.",
+    )
     first_seen_at: datetime = Field(default_factory=utcnow)
     last_seen_at: datetime = Field(default_factory=utcnow)
     meta: dict[str, Any] = Field(default_factory=dict)
@@ -135,6 +143,11 @@ class Story(TenantScoped):
     def source_count(self) -> int:
         """Number of distinct sources that reported this story."""
         return len(set(self.source_ids))
+
+    @property
+    def is_selected(self) -> bool:
+        """Chosen for production. Not the same as scored well."""
+        return self.selected_at is not None
 
     @property
     def is_publishable(self) -> bool:
@@ -161,7 +174,16 @@ class EditorialScore(ImmutableModel):
     total: float = Field(ge=0.0, le=1.0)
     components: dict[str, float] = Field(
         default_factory=dict,
-        description="Per-signal contributions, e.g. corroboration/recency/authority.",
+        description="Per-signal weighted contributions, e.g. corroboration/recency.",
+    )
+    raw: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Each signal's measurement before normalisation and weighting, in "
+            "its own units. Kept because it cannot be recovered from the "
+            "components -- and without it, refitting weights against measured "
+            "engagement in Phase 5 would have no training inputs (ADR 0016)."
+        ),
     )
     rationale: str | None = Field(
         default=None,

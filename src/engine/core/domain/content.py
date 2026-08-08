@@ -2,9 +2,9 @@
 
 Two decisions are encoded here and both are monetisation-critical:
 
-1. ``BrandProfile`` and ``ChannelSpec`` are **data, not prompts**. Onboarding a
-   customer becomes inserting rows, not editing Python. This is the single
-   change that makes multi-tenant generation possible.
+1. ``BrandProfile`` is **data, not a prompt**. Onboarding a customer becomes
+   inserting rows, not editing Python. This is the single change that makes
+   multi-tenant generation possible.
 2. ``ContentAsset`` is addressable and versioned per story/channel/language, so
    one channel can be regenerated without touching the rest, variants can be
    A/B tested, and performance can be attributed back to a specific version.
@@ -16,17 +16,13 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 
-from engine.core.domain.base import DomainModel, ImmutableModel, TenantScoped, utcnow
-from engine.core.domain.enums import (
-    Channel,
-    ContentKind,
-    ContentState,
-    Language,
-    can_transition,
-)
+from engine.core.domain.base import ImmutableModel, TenantScoped, utcnow
+from engine.core.domain.enums import ContentState, can_transition
 from engine.core.domain.ids import IdPrefix, new_id
+from engine.core.domain.language import LanguageTag
+from engine.core.domain.ledger import TokenUsage
 
 
 class BrandProfile(TenantScoped):
@@ -40,7 +36,7 @@ class BrandProfile(TenantScoped):
     id: str = Field(default_factory=lambda: new_id(IdPrefix.BRAND))
     key: str = Field(description="Stable lookup key, unique per workspace.")
     name: str
-    language: Language
+    language: LanguageTag
     audience: str = Field(description="Who we are writing for, in plain words.")
     tone_rules: list[str] = Field(default_factory=list)
     style_rules: list[str] = Field(default_factory=list)
@@ -56,32 +52,6 @@ class BrandProfile(TenantScoped):
     )
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
-
-
-class ChannelSpec(DomainModel):
-    """Hard formatting constraints for one distribution channel.
-
-    Not tenant-scoped: these are properties of the platform, shared by everyone.
-    """
-
-    key: Channel
-    name: str
-    max_characters: int = Field(gt=0)
-    supports_hashtags: bool = True
-    max_hashtags: int = Field(default=0, ge=0)
-    supports_links: bool = True
-    preferred_kinds: list[ContentKind] = Field(default_factory=list)
-    format_notes: list[str] = Field(
-        default_factory=list,
-        description="Channel conventions passed to generation as explicit rules.",
-    )
-
-    @model_validator(mode="after")
-    def _validate_hashtags(self) -> ChannelSpec:
-        if self.supports_hashtags and self.max_hashtags == 0:
-            msg = f"channel {self.key} supports hashtags but max_hashtags is 0"
-            raise ValueError(msg)
-        return self
 
 
 class RevisionOrigin(StrEnum):
@@ -125,6 +95,26 @@ class ContentRevision(ImmutableModel):
             "regression after a prompt change cannot be attributed."
         ),
     )
+    model: str | None = Field(
+        default=None,
+        description="Which model wrote it. None for revisions a human produced.",
+    )
+    usage: TokenUsage = Field(
+        default_factory=TokenUsage,
+        description=(
+            "What this revision consumed. Recorded here rather than on the asset "
+            "because the *revision* is the unit of spend: regenerating costs "
+            "again, and an asset's cost is the sum of its chain."
+        ),
+    )
+    cost_usd: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Priced at the moment of generation, so a later price change "
+            "cannot rewrite what last month actually cost."
+        ),
+    )
     created_at: datetime = Field(default_factory=utcnow)
     meta: dict[str, Any] = Field(default_factory=dict)
 
@@ -139,12 +129,14 @@ class ContentAsset(TenantScoped):
     id: str = Field(default_factory=lambda: new_id(IdPrefix.ASSET))
     story_id: str
     run_id: str
-    kind: ContentKind
-    channel: Channel | None = Field(
-        default=None,
-        description="None for channel-agnostic assets such as image prompts.",
+    product_key: str = Field(
+        description="Which pack-defined output product this is, e.g. 'social_post'."
     )
-    language: Language
+    channel_key: str | None = Field(
+        default=None,
+        description="Pack-defined channel. None for channel-agnostic products.",
+    )
+    language: LanguageTag
     brand_profile_key: str
     current_revision_id: str | None = Field(
         default=None,
@@ -175,12 +167,20 @@ class ContentAsset(TenantScoped):
         actor_id: str,
         previous: ContentRevision | None = None,
         prompt_version: str | None = None,
+        model: str | None = None,
+        usage: TokenUsage | None = None,
+        cost_usd: float = 0.0,
+        meta: dict[str, Any] | None = None,
     ) -> ContentRevision:
         """Build the next revision in the chain.
 
         Returns the revision without persisting it or advancing
         ``current_revision_id``: the caller owns the transaction, and the
         pointer must only move once the revision is durable.
+
+        ``meta`` is supplied here rather than assigned afterwards because a
+        revision is immutable -- a record that can be edited after the fact is
+        not an audit trail.
         """
         return ContentRevision(
             workspace_id=self.workspace_id,
@@ -191,6 +191,10 @@ class ContentAsset(TenantScoped):
             actor_id=actor_id,
             parent_revision_id=None if previous is None else previous.id,
             prompt_version=prompt_version,
+            model=model,
+            usage=usage or TokenUsage(),
+            cost_usd=cost_usd,
+            meta=meta or {},
         )
 
     def transition_to(self, target: ContentState, *, notes: str | None = None) -> None:
@@ -208,13 +212,33 @@ class ContentAsset(TenantScoped):
         self.updated_at = utcnow()
 
 
+class AssetSpend(ImmutableModel):
+    """What generating one asset has cost, summed over its revision chain.
+
+    A read model, not a stored entity: the numbers live on the revisions, and
+    materialising a running total would be a second source of truth that drifts
+    the first time a revision is added outside the stage that maintains it.
+    """
+
+    asset_id: str = Field(description="Empty when this is a workspace-wide total.")
+    revisions: int = Field(default=0, ge=0)
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    cost_usd: float = Field(default=0.0, ge=0.0)
+
+    @property
+    def cost_per_revision_usd(self) -> float:
+        """What one attempt costs -- the number that scales with volume."""
+        return self.cost_usd / self.revisions if self.revisions else 0.0
+
+
 class Publication(ImmutableModel):
     """Record of an asset going live. Immutable: it either happened or it did not."""
 
     id: str = Field(default_factory=lambda: new_id(IdPrefix.PUBLICATION))
     workspace_id: str
     asset_id: str
-    channel: Channel
+    channel_key: str
     external_url: str | None = None
     external_id: str | None = None
     published_at: datetime = Field(default_factory=utcnow)

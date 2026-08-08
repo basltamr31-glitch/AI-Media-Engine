@@ -12,29 +12,47 @@ from __future__ import annotations
 from engine.adapters.persistence.models import (
     AccountRow,
     ActorRow,
+    ContentAssetRow,
+    ContentRevisionRow,
+    EditorialScoreRow,
+    EvidenceRow,
     MembershipRow,
     RunRow,
     RunStageRow,
     SignalRow,
     SourceDocumentRow,
     SourceRow,
+    StoryCandidateRow,
+    StoryRow,
     WorkspaceRow,
 )
 from engine.core.domain.account import Account, Actor, Membership, Quota
+from engine.core.domain.content import ContentAsset, ContentRevision, RevisionOrigin
 from engine.core.domain.enums import (
     ActorKind,
-    Language,
+    ContentState,
+    EvidenceKind,
     MembershipRole,
     PlanTier,
     RunStatus,
     SignalPolarity,
     SourceKind,
     StageStatus,
+    StoryStatus,
     SubjectType,
 )
+from engine.core.domain.language import LanguageTag
 from engine.core.domain.ledger import RunLedger, StageRecord, TokenUsage
+from engine.core.domain.matching import title_key, url_key
 from engine.core.domain.signal import Signal
 from engine.core.domain.source import Source, SourceDocument
+from engine.core.domain.story import (
+    EditorialScore,
+    EnrichedSource,
+    Evidence,
+    Story,
+    StoryCandidate,
+)
 from engine.core.domain.workspace import Workspace
 
 # --- Account, Actor, Membership ----------------------------------------------
@@ -181,7 +199,7 @@ def workspace_to_row(workspace: Workspace) -> WorkspaceRow:
         name=workspace.name,
         pack_key=workspace.pack_key,
         timezone=workspace.timezone,
-        languages=[language.value for language in workspace.languages],
+        languages=list(workspace.languages),
         is_active=workspace.is_active,
         created_at=workspace.created_at,
         updated_at=workspace.updated_at,
@@ -197,7 +215,7 @@ def workspace_from_row(row: WorkspaceRow) -> Workspace:
         name=row.name,
         pack_key=row.pack_key,
         timezone=row.timezone,
-        languages=[Language(value) for value in row.languages],
+        languages=list(row.languages),
         is_active=row.is_active,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -210,7 +228,7 @@ def apply_workspace(row: WorkspaceRow, workspace: Workspace) -> None:
     row.slug = workspace.slug
     row.name = workspace.name
     row.timezone = workspace.timezone
-    row.languages = [language.value for language in workspace.languages]
+    row.languages = list(workspace.languages)
     row.is_active = workspace.is_active
     row.updated_at = workspace.updated_at
     row.meta = workspace.meta
@@ -297,6 +315,270 @@ def document_from_row(row: SourceDocumentRow) -> SourceDocument:
         raw_content=row.raw_content,
         published_at=row.published_at,
         fetched_at=row.fetched_at,
+        meta=dict(row.meta),
+    )
+
+
+def candidate_to_row(candidate: StoryCandidate) -> StoryCandidateRow:
+    return StoryCandidateRow(
+        id=candidate.id,
+        workspace_id=candidate.workspace_id,
+        document_id=candidate.document_id,
+        source_id=candidate.source_id,
+        story_id=candidate.story_id,
+        headline=candidate.headline,
+        summary=candidate.summary,
+        primary_url=candidate.primary_url,
+        raw_excerpt=candidate.raw_excerpt,
+        ordinal=candidate.ordinal,
+        extracted_at=candidate.extracted_at,
+        meta=candidate.meta,
+    )
+
+
+def candidate_from_row(row: StoryCandidateRow) -> StoryCandidate:
+    return StoryCandidate(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        document_id=row.document_id,
+        source_id=row.source_id,
+        story_id=row.story_id,
+        headline=row.headline,
+        summary=row.summary,
+        primary_url=row.primary_url,
+        raw_excerpt=row.raw_excerpt,
+        ordinal=row.ordinal,
+        extracted_at=row.extracted_at,
+        meta=dict(row.meta),
+    )
+
+
+def story_to_row(story: Story) -> StoryRow:
+    return StoryRow(
+        id=story.id,
+        workspace_id=story.workspace_id,
+        canonical_headline=story.canonical_headline,
+        canonical_summary=story.canonical_summary,
+        primary_url=story.primary_url,
+        url_key=url_key(story.primary_url),
+        title_key=title_key(story.canonical_headline),
+        status=story.status.value,
+        topics=story.topics,
+        entities=story.entities,
+        enrichment=story.enrichment.model_dump(mode="json") if story.enrichment else None,
+        selected_at=story.selected_at,
+        first_seen_at=story.first_seen_at,
+        last_seen_at=story.last_seen_at,
+        meta=story.meta,
+    )
+
+
+def story_from_row(
+    row: StoryRow,
+    *,
+    candidate_ids: list[str] | None = None,
+    source_ids: list[str] | None = None,
+) -> Story:
+    """Rebuild a story.
+
+    ``candidate_ids`` and ``source_ids`` are not columns: they are derived from
+    the candidates pointing at this story, so the repository supplies them from
+    one grouped query rather than the row duplicating -- and eventually
+    contradicting -- the foreign key.
+    """
+    return Story(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        canonical_headline=row.canonical_headline,
+        canonical_summary=row.canonical_summary,
+        primary_url=row.primary_url,
+        status=StoryStatus(row.status),
+        candidate_ids=list(candidate_ids or []),
+        source_ids=list(source_ids or []),
+        topics=list(row.topics),
+        entities=list(row.entities),
+        enrichment=EnrichedSource(**row.enrichment) if row.enrichment else None,
+        selected_at=row.selected_at,
+        first_seen_at=row.first_seen_at,
+        last_seen_at=row.last_seen_at,
+        meta=dict(row.meta),
+    )
+
+
+def apply_story(row: StoryRow, story: Story) -> None:
+    row.canonical_headline = story.canonical_headline
+    row.canonical_summary = story.canonical_summary
+    row.primary_url = story.primary_url
+    row.url_key = url_key(story.primary_url)
+    row.title_key = title_key(story.canonical_headline)
+    row.status = story.status.value
+    row.topics = story.topics
+    row.entities = story.entities
+    row.enrichment = story.enrichment.model_dump(mode="json") if story.enrichment else None
+    row.selected_at = story.selected_at
+    row.first_seen_at = story.first_seen_at
+    row.last_seen_at = story.last_seen_at
+    row.meta = story.meta
+
+
+def evidence_to_row(evidence: Evidence) -> EvidenceRow:
+    return EvidenceRow(
+        id=evidence.id,
+        workspace_id=evidence.workspace_id,
+        story_id=evidence.story_id,
+        claim=evidence.claim,
+        kind=evidence.kind.value,
+        source_url=evidence.source_url,
+        source_title=evidence.source_title,
+        quote=evidence.quote,
+        captured_at=evidence.captured_at,
+    )
+
+
+def evidence_from_row(row: EvidenceRow) -> Evidence:
+    return Evidence(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        story_id=row.story_id,
+        claim=row.claim,
+        kind=EvidenceKind(row.kind),
+        source_url=row.source_url,
+        source_title=row.source_title,
+        quote=row.quote,
+        captured_at=row.captured_at,
+    )
+
+
+def score_to_row(score: EditorialScore) -> EditorialScoreRow:
+    return EditorialScoreRow(
+        id=score.id,
+        workspace_id=score.workspace_id,
+        story_id=score.story_id,
+        run_id=score.run_id,
+        total=score.total,
+        components=score.components,
+        raw=score.raw,
+        rationale=score.rationale,
+        scored_at=score.scored_at,
+    )
+
+
+def score_from_row(row: EditorialScoreRow) -> EditorialScore:
+    return EditorialScore(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        story_id=row.story_id,
+        run_id=row.run_id,
+        total=row.total,
+        components={key: float(value) for key, value in row.components.items()},
+        raw={key: float(value) for key, value in row.raw.items()},
+        rationale=row.rationale,
+        scored_at=row.scored_at,
+    )
+
+
+# --- Content -----------------------------------------------------------------
+
+
+def asset_to_row(asset: ContentAsset) -> ContentAssetRow:
+    return ContentAssetRow(
+        id=asset.id,
+        workspace_id=asset.workspace_id,
+        story_id=asset.story_id,
+        run_id=asset.run_id,
+        product_key=asset.product_key,
+        channel_key=asset.channel_key,
+        language=str(asset.language),
+        brand_profile_key=asset.brand_profile_key,
+        current_revision_id=asset.current_revision_id,
+        state=asset.state.value,
+        variant=asset.variant,
+        evidence_ids=list(asset.evidence_ids),
+        review_notes=asset.review_notes,
+        created_at=asset.created_at,
+        updated_at=asset.updated_at,
+        meta=asset.meta,
+    )
+
+
+def asset_from_row(row: ContentAssetRow) -> ContentAsset:
+    return ContentAsset(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        story_id=row.story_id,
+        run_id=row.run_id,
+        product_key=row.product_key,
+        channel_key=row.channel_key,
+        language=LanguageTag(row.language),
+        brand_profile_key=row.brand_profile_key,
+        current_revision_id=row.current_revision_id,
+        state=ContentState(row.state),
+        variant=row.variant,
+        evidence_ids=list(row.evidence_ids),
+        review_notes=row.review_notes,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        meta=dict(row.meta),
+    )
+
+
+def apply_asset(row: ContentAssetRow, asset: ContentAsset) -> None:
+    """Copy mutable state onto an existing row.
+
+    Identity, story and slot are omitted deliberately: changing any of them
+    would make this a different asset, and the unique constraint on the slot
+    exists to say so.
+    """
+    row.current_revision_id = asset.current_revision_id
+    row.state = asset.state.value
+    row.evidence_ids = list(asset.evidence_ids)
+    row.review_notes = asset.review_notes
+    row.updated_at = asset.updated_at
+    row.meta = asset.meta
+
+
+def revision_to_row(revision: ContentRevision) -> ContentRevisionRow:
+    return ContentRevisionRow(
+        id=revision.id,
+        workspace_id=revision.workspace_id,
+        asset_id=revision.asset_id,
+        revision_number=revision.revision_number,
+        body=revision.body,
+        origin=revision.origin.value,
+        actor_id=revision.actor_id,
+        parent_revision_id=revision.parent_revision_id,
+        prompt_version=revision.prompt_version,
+        model=revision.model,
+        input_tokens=revision.usage.input_tokens,
+        output_tokens=revision.usage.output_tokens,
+        cache_read_tokens=revision.usage.cache_read_tokens,
+        cache_write_tokens=revision.usage.cache_write_tokens,
+        cost_usd=revision.cost_usd,
+        created_at=revision.created_at,
+        meta=revision.meta,
+    )
+
+
+def revision_from_row(row: ContentRevisionRow) -> ContentRevision:
+    return ContentRevision(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        asset_id=row.asset_id,
+        revision_number=row.revision_number,
+        body=row.body,
+        origin=RevisionOrigin(row.origin),
+        actor_id=row.actor_id,
+        parent_revision_id=row.parent_revision_id,
+        prompt_version=row.prompt_version,
+        model=row.model,
+        usage=TokenUsage(
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            cache_read_tokens=row.cache_read_tokens,
+            cache_write_tokens=row.cache_write_tokens,
+        ),
+        cost_usd=row.cost_usd,
+        created_at=row.created_at,
         meta=dict(row.meta),
     )
 

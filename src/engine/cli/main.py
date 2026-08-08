@@ -13,13 +13,25 @@ from rich.console import Console
 
 from engine import __version__
 from engine.cli.commands import (
+    cost,
     db,
     diagnostics,
+    enrich,
+    evals,
+    evidence,
+    generate,
     identity,
     ingest,
+    llm,
     pack,
+    parse,
     pipeline,
+    plugins,
+    render,
+    score,
+    select,
     sources,
+    stories,
     workspace,
 )
 
@@ -37,8 +49,21 @@ app.add_typer(identity.account_app, name="account")
 app.add_typer(identity.signals_app, name="signals")
 app.add_typer(workspace.app, name="workspace")
 app.add_typer(pack.app, name="pack")
+app.add_typer(plugins.app, name="plugins")
 app.add_typer(sources.app, name="sources")
 app.add_typer(ingest.app, name="ingest")
+app.add_typer(parse.app, name="parse")
+app.add_typer(stories.resolve_app, name="resolve")
+app.add_typer(enrich.app, name="enrich")
+app.add_typer(evidence.app, name="evidence")
+app.add_typer(score.app, name="score")
+app.add_typer(select.app, name="select")
+app.add_typer(generate.app, name="generate")
+app.add_typer(cost.app, name="cost")
+app.add_typer(evals.app, name="eval")
+app.add_typer(render.app, name="render")
+app.add_typer(stories.stories_app, name="stories")
+app.add_typer(llm.app, name="llm")
 app.add_typer(pipeline.app, name="pipeline")
 app.add_typer(diagnostics.app, name="config", help="Configuration inspection.")
 

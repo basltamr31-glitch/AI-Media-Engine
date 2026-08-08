@@ -24,6 +24,7 @@ import contextlib
 from pathlib import Path
 from typing import Any, Final
 
+from engine.adapters.plugins.context import PluginContext
 from engine.observability.logging import get_logger
 
 logger = get_logger(__name__)
@@ -190,3 +191,15 @@ class GoogleCredentialStore:
         # Best-effort permission tightening; a no-op on Windows, which uses ACLs.
         with contextlib.suppress(OSError):
             self._token_file.chmod(0o600)
+
+
+def credential_store_from(context: PluginContext) -> GoogleCredentialStore:
+    """Build the store from configured paths.
+
+    Shared by the composition root and by the Gmail plugin factory so the two
+    can never drift onto different files or scopes.
+    """
+    return GoogleCredentialStore(
+        credentials_file=context.resolve_path(context.settings.google_credentials_file),
+        token_file=context.resolve_path(context.settings.google_token_file),
+    )

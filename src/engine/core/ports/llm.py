@@ -20,6 +20,21 @@ from engine.core.domain.ledger import TokenUsage
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
+class LLMError(RuntimeError):
+    """Raised when a generation could not be completed or could not be trusted.
+
+    A single exception type, like :class:`~engine.core.ports.enrichment.ExtractionError`:
+    callers isolate the failure per item rather than branching on the cause, and
+    the stable ``code`` is what gets counted. Deriving a category by slicing the
+    message is how one provider's phrasing becomes a schema change.
+    """
+
+    def __init__(self, message: str, *, code: str = "llm_failed", model: str = "") -> None:
+        self.code = code
+        self.model = model
+        super().__init__(f"{message} (model={model})" if model else message)
+
+
 class LLMRequest(DomainModel):
     """A single structured-generation request."""
 

@@ -17,9 +17,14 @@ from engine.adapters.persistence.identity_repositories import (
     SqlAlchemySignalRepository,
 )
 from engine.adapters.persistence.repositories import (
+    SqlAlchemyContentAssetRepository,
+    SqlAlchemyEditorialScoreRepository,
+    SqlAlchemyEvidenceRepository,
     SqlAlchemyRunRepository,
     SqlAlchemySourceDocumentRepository,
     SqlAlchemySourceRepository,
+    SqlAlchemyStoryCandidateRepository,
+    SqlAlchemyStoryRepository,
     SqlAlchemyWorkspaceRepository,
 )
 
@@ -45,6 +50,11 @@ class SqlAlchemyUnitOfWork:
     workspaces: SqlAlchemyWorkspaceRepository
     sources: SqlAlchemySourceRepository
     documents: SqlAlchemySourceDocumentRepository
+    candidates: SqlAlchemyStoryCandidateRepository
+    stories: SqlAlchemyStoryRepository
+    evidence: SqlAlchemyEvidenceRepository
+    scores: SqlAlchemyEditorialScoreRepository
+    assets: SqlAlchemyContentAssetRepository
     runs: SqlAlchemyRunRepository
     signals: SqlAlchemySignalRepository
 
@@ -59,6 +69,11 @@ class SqlAlchemyUnitOfWork:
         self.workspaces = SqlAlchemyWorkspaceRepository(self._session)
         self.sources = SqlAlchemySourceRepository(self._session)
         self.documents = SqlAlchemySourceDocumentRepository(self._session)
+        self.candidates = SqlAlchemyStoryCandidateRepository(self._session)
+        self.stories = SqlAlchemyStoryRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.scores = SqlAlchemyEditorialScoreRepository(self._session)
+        self.assets = SqlAlchemyContentAssetRepository(self._session)
         self.runs = SqlAlchemyRunRepository(self._session)
         self.signals = SqlAlchemySignalRepository(self._session)
         return self

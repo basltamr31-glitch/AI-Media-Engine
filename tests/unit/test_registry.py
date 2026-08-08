@@ -11,22 +11,7 @@ from engine.adapters.sources.registry import (
 )
 from engine.core.domain.enums import SourceKind
 from engine.core.domain.source import SourceDocument
-from engine.core.domain.story import StoryCandidate
-
-
-class FakeParser:
-    def __init__(self, key: str) -> None:
-        self._key = key
-
-    @property
-    def parser_key(self) -> str:
-        return self._key
-
-    def can_parse(self, document: SourceDocument) -> bool:
-        return True
-
-    def parse(self, document: SourceDocument) -> list[StoryCandidate]:
-        return []
+from tests.fakes import FakeParser
 
 
 class FakeFetcher:
@@ -68,8 +53,8 @@ class TestParserRegistry:
         with pytest.raises(ParserNotFoundError, match="available: arxiv_rss"):
             registry.get("nope")
 
-    def test_phase_zero_registry_is_empty(self):
-        """No parsers exist yet by design -- only the seam they will plug into."""
+    def test_a_fresh_registry_is_empty(self):
+        """Parsers arrive by registration, never by import side effect."""
         assert len(ParserRegistry()) == 0
 
 

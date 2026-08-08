@@ -1,0 +1,11 @@
+{
+  "model": "qwen3:1.7b",
+  "prompt_version": "gen-4",
+  "repeat": 3,
+  "overall": 0.8807,
+  "cases": {
+    "agentic_en_x": 0.8304,
+    "matraix_ar_linkedin": 0.9715,
+    "matraix_en_linkedin": 0.8403
+  }
+}

@@ -10,7 +10,6 @@ from __future__ import annotations
 from engine.core.domain.base import DomainModel, ImmutableModel, TenantScoped, utcnow
 from engine.core.domain.content import (
     BrandProfile,
-    ChannelSpec,
     ContentAsset,
     ContentRevision,
     PerformanceMetric,
@@ -19,11 +18,8 @@ from engine.core.domain.content import (
 )
 from engine.core.domain.enums import (
     CONTENT_STATE_TRANSITIONS,
-    Channel,
-    ContentKind,
     ContentState,
     EvidenceKind,
-    Language,
     RunStatus,
     SourceKind,
     StageStatus,
@@ -31,8 +27,18 @@ from engine.core.domain.enums import (
     can_transition,
 )
 from engine.core.domain.ids import IdPrefix, is_valid_id, new_id, timestamp_of, ulid
+from engine.core.domain.language import ARABIC, ENGLISH, LanguageTag, base_language
 from engine.core.domain.ledger import RunLedger, StageRecord, TokenUsage
-from engine.core.domain.policy import EditorialPolicy, ScoringWeights
+from engine.core.domain.pack import (
+    ChannelDef,
+    DomainPack,
+    Normaliser,
+    ProductDef,
+    ProductKind,
+    RankingSignal,
+    TaxonomyNode,
+)
+from engine.core.domain.policy import EditorialPolicy, ScoringProfile
 from engine.core.domain.source import Source, SourceDocument, compute_content_hash
 from engine.core.domain.story import (
     MAX_QUOTE_WORDS,
@@ -46,16 +52,17 @@ from engine.core.domain.story import (
 from engine.core.domain.workspace import Workspace
 
 __all__ = [
+    "ARABIC",
     "CONTENT_STATE_TRANSITIONS",
+    "ENGLISH",
     "MAX_QUOTE_WORDS",
     "BrandProfile",
-    "Channel",
-    "ChannelSpec",
+    "ChannelDef",
     "ContentAsset",
-    "ContentKind",
     "ContentRevision",
     "ContentState",
     "DomainModel",
+    "DomainPack",
     "EditorialPolicy",
     "EditorialScore",
     "EnrichedSource",
@@ -63,13 +70,17 @@ __all__ = [
     "EvidenceKind",
     "IdPrefix",
     "ImmutableModel",
-    "Language",
+    "LanguageTag",
+    "Normaliser",
     "PerformanceMetric",
+    "ProductDef",
+    "ProductKind",
     "Publication",
+    "RankingSignal",
     "RevisionOrigin",
     "RunLedger",
     "RunStatus",
-    "ScoringWeights",
+    "ScoringProfile",
     "Source",
     "SourceDocument",
     "SourceKind",
@@ -79,9 +90,11 @@ __all__ = [
     "StoryCandidate",
     "StoryStatus",
     "StoryWithScore",
+    "TaxonomyNode",
     "TenantScoped",
     "TokenUsage",
     "Workspace",
+    "base_language",
     "can_transition",
     "compute_content_hash",
     "is_valid_id",

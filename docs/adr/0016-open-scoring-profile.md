@@ -41,6 +41,14 @@ Split the fixed model into three pieces.
 **`SignalDef`** — pack data declaring that a signal exists:
 `key, kind (numeric/boolean/set), normaliser, default_weight, description`.
 
+> Implemented in Phase 1.5.6 as **`RankingSignal`**, not `SignalDef`. `Signal`
+> is already taken by the feedback-log entity (ADR 0012), and `SignalDef` next
+> to `Signal` in the same package reads as "the definition of a Signal", which
+> it is not. The field `kind` was dropped: normaliser choice already implies the
+> value's shape, and a second unused discriminator would only be able to
+> disagree with it. Shipped shape is
+> `key, name, normaliser, default_weight, parameters, description`.
+
 **`SignalComputer`** — a port with one method, `compute(story, ctx) -> float`,
 registered by key through the plugin mechanism (ADR 0017). One computer per
 signal, independently testable, independently cacheable.
@@ -51,6 +59,16 @@ against the signal keys the active pack registers, still required to sum to 1.0.
 Computed values are persisted as `SignalValue` rows —
 `(story_id, signal_key, raw, normalised, signal_version, computed_at)` — not
 merely summed into a total.
+
+> **Amended in Phase 3.1 as built.** There is no `signal_values` table. The
+> per-signal values live on `EditorialScore` instead, as two parallel maps:
+> `raw` (what the computer measured) and `components` (weighted contribution
+> after normalisation), alongside `total`, `run_id` and `scored_at`. The
+> property this ADR actually asks for — that every signal's value survives, so
+> a ranking can be explained and the weights refitted later — holds either way,
+> and scores are already append-only per run. A separate table would buy
+> per-signal querying that nothing yet needs; it remains available if refitting
+> demands it.
 
 That last point is the one that matters most and is easy to skip. Storing signals
 separately gives a **feature matrix per story**, which is exactly the training

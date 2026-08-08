@@ -144,3 +144,96 @@ class TestPackSelection:
         assert runner.invoke(app, ["workspace", "seed"]).exit_code == 0
         result = runner.invoke(app, ["pack", "list"])
         assert "widgets-co" in result.stdout
+
+
+class TestScoringProfileValidation:
+    """A weight naming an undeclared signal must fail at seed, not at ranking."""
+
+    def test_seeding_rejects_an_unknown_ranking_signal(self, isolated: Path) -> None:
+        path = isolated / "config" / "workspaces" / "widgets-co.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {**WORKSPACE, "editorial": {"scoring": {"weights": {"ghost_signal": 1.0}}}}
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workspace", "seed"])
+        assert result.exit_code == 1
+        assert "unknown ranking signal" in result.stdout
+
+        container = build_container()
+        with container.unit_of_work() as uow:
+            assert uow.workspaces.get_by_slug("widgets-co") is None
+
+    def test_a_workspace_may_inherit_the_packs_default_profile(self, isolated: Path) -> None:
+        pack = isolated / "packs" / "widgets" / "pack.yaml"
+        pack.write_text(
+            WIDGET_PACK
+            + """
+ranking_signals:
+  - key: velocity
+    name: Velocity
+    normaliser: linear
+    default_weight: 0.6
+    parameters: {ceiling: 5}
+  - {key: freshness, name: Freshness, normaliser: decay, default_weight: 0.4}
+""",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workspace", "seed"])
+        assert result.exit_code == 0, result.stdout
+        assert "2 ranking signals (inherited)" in result.stdout
+
+    def test_a_workspace_may_override_the_default_profile(self, isolated: Path) -> None:
+        pack = isolated / "packs" / "widgets" / "pack.yaml"
+        pack.write_text(
+            WIDGET_PACK
+            + """
+ranking_signals:
+  - key: velocity
+    name: Velocity
+    normaliser: linear
+    default_weight: 0.6
+    parameters: {ceiling: 5}
+  - {key: freshness, name: Freshness, normaliser: decay, default_weight: 0.4}
+""",
+            encoding="utf-8",
+        )
+        path = isolated / "config" / "workspaces" / "widgets-co.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    **WORKSPACE,
+                    "editorial": {"scoring": {"weights": {"velocity": 0.9, "freshness": 0.1}}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workspace", "seed"])
+        assert result.exit_code == 0, result.stdout
+        assert "2 ranking signals" in result.stdout
+        assert "inherited" not in result.stdout
+
+    def test_pack_show_renders_ranking_signals(self, isolated: Path) -> None:
+        pack = isolated / "packs" / "widgets" / "pack.yaml"
+        pack.write_text(
+            WIDGET_PACK
+            + """
+ranking_signals:
+  - key: velocity
+    name: Velocity
+    normaliser: linear
+    default_weight: 1.0
+    parameters: {ceiling: 5}
+""",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["pack", "show", "widgets"])
+        assert result.exit_code == 0
+        assert "Ranking signals" in result.stdout
+        assert "velocity" in result.stdout
+        assert "ceiling=5" in result.stdout

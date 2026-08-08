@@ -27,16 +27,36 @@ pip install -e ".[dev]"
 
 ### Optional extras
 
-Declared but **not installed**, so the dependency graph documents the roadmap
-and nothing gets used before its phase:
+Everything the pipeline needs to ingest, parse, enrich, rank, select, generate
+and render is a **core dependency** — including the local model path, which
+talks to Ollama over `httpx` and needs nothing extra.
+
+The remaining extras are declared but **not installed**, so the dependency
+graph documents the roadmap and nothing gets used before its phase:
 
 ```bash
-pip install -e ".[dev,sources]"   # Phase 1: httpx, feedparser, bs4, lxml, trafilatura
-pip install -e ".[dev,google]"    # Phase 1: Gmail API client
-pip install -e ".[dev,llm]"       # Phase 3: anthropic SDK
+pip install -e ".[dev,llm]"       # the hosted provider only: anthropic SDK
 pip install -e ".[dev,postgres]"  # Phase 6: psycopg
 pip install -e ".[dev,api]"       # Phase 7: fastapi, uvicorn
 ```
+
+---
+
+## Generation (optional)
+
+The engine ingests, ranks and selects with no model installed. To generate
+text, the default provider is a local model — free, offline, and no account:
+
+```bash
+# install Ollama from https://ollama.com/download, then:
+ollama pull qwen3:1.7b
+engine llm check              # one real call, validated against a schema
+engine llm check --corpus     # the same, over a real story's article text
+```
+
+`engine doctor` reports whether the server is reachable and the model pulled.
+Nothing here needs the `llm` extra — that is only for the hosted provider.
+Which model runs, and how to switch: [`LLM.md`](LLM.md).
 
 ---
 

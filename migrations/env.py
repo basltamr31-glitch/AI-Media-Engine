@@ -11,7 +11,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from engine.adapters.persistence.models import Base
+from engine.adapters.persistence.models import Base, UtcDateTime
 from engine.adapters.persistence.session import ensure_sqlite_directory
 from engine.settings import get_settings
 
@@ -36,6 +36,20 @@ def _is_sqlite() -> bool:
     return _configured_url.startswith("sqlite")
 
 
+def _render_item(type_: str, obj: object, autogen_context: object) -> str | bool:
+    """Render custom column types as the database type they actually are.
+
+    ``UtcDateTime`` is a TypeDecorator, and autogenerate renders those as a
+    dotted path into ``engine.adapters.persistence`` -- which the migration
+    never imports, so it fails with NameError at runtime. Migrations should
+    describe the schema anyway, not the ORM types that happen to produce it.
+    """
+    if type_ == "type" and isinstance(obj, UtcDateTime):
+        autogen_context.imports.add("import sqlalchemy as sa")  # type: ignore[attr-defined]
+        return "sa.DateTime(timezone=True)"
+    return False
+
+
 def run_migrations_offline() -> None:
     """Emit SQL to stdout without a live connection (`alembic upgrade --sql`)."""
     context.configure(
@@ -47,6 +61,7 @@ def run_migrations_offline() -> None:
         compare_server_default=True,
         # SQLite cannot ALTER most columns; batch mode rebuilds the table instead.
         render_as_batch=_is_sqlite(),
+        render_item=_render_item,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -67,6 +82,7 @@ def run_migrations_online() -> None:
             compare_type=True,
             compare_server_default=True,
             render_as_batch=_is_sqlite(),
+            render_item=_render_item,
         )
         with context.begin_transaction():
             context.run_migrations()

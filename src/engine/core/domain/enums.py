@@ -3,25 +3,20 @@
 Enums are ``StrEnum`` so they serialise to readable strings in JSON, SQL and
 logs. Values are persisted, so they are part of the data contract: add freely,
 rename never.
+
+**What belongs here** (ADR 0015): things the *engine* controls, where the set
+closes with the engine and a new value implies new engine code anyway --
+statuses, lifecycle states, transport kinds.
+
+**What does not**: things the *market* controls -- channels, output products,
+languages. Those are pack data, because Threads, a research digest and German
+must not each require a migration.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
 from typing import Final
-
-
-class Language(StrEnum):
-    """Output languages. Arabic is the strategic wedge, not an afterthought.
-
-    .. deprecated:: Phase 1.5
-        Superseded by validated BCP-47 language tags (ADR 0015). A closed enum
-        cannot express a German finance customer without a migration. Retained
-        until milestone 1.5.5 migrates the call sites.
-    """
-
-    AR = "ar"
-    EN = "en"
 
 
 class PlanTier(StrEnum):
@@ -55,18 +50,6 @@ class MembershipRole(StrEnum):
     ADMIN = "admin"
     EDITOR = "editor"
     VIEWER = "viewer"
-
-
-class Channel(StrEnum):
-    """Distribution channels enabled for V1.
-
-    Facebook, TikTok and the blog are deliberately absent: breadth before
-    quality is how content products become mediocre everywhere.
-    """
-
-    INSTAGRAM = "instagram"
-    X = "x"
-    LINKEDIN = "linkedin"
 
 
 class SourceKind(StrEnum):
@@ -104,17 +87,6 @@ class EvidenceKind(StrEnum):
     PRIMARY = "primary"  # the paper, the announcement, the official blog
     SECONDARY = "secondary"  # reputable reporting on the primary source
     AGGREGATOR = "aggregator"  # newsletter or feed that surfaced it
-
-
-class ContentKind(StrEnum):
-    """What a generated asset is."""
-
-    SOCIAL_POST = "social_post"
-    CAPTION = "caption"
-    HASHTAGS = "hashtags"
-    REEL_SCRIPT = "reel_script"
-    VOICEOVER = "voiceover"
-    IMAGE_PROMPT = "image_prompt"
 
 
 class ContentState(StrEnum):

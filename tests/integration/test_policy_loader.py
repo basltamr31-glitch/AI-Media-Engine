@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from engine.adapters.config.policy_loader import PolicyLoader, PolicyLoadError
-from engine.core.domain.enums import Channel, Language, SourceKind
+from engine.core.domain.enums import SourceKind
+from engine.core.domain.language import ARABIC
 
 pytestmark = pytest.mark.integration
 
@@ -25,7 +26,7 @@ class TestShippedConfiguration:
     def test_default_workspace_is_valid(self, loader: PolicyLoader):
         config = loader.load_workspace("default")
         assert config.slug == "default"
-        assert Language.AR in config.languages
+        assert ARABIC in config.languages
 
     def test_ships_with_multiple_source_transports(self, loader: PolicyLoader):
         """Single-source dependency is a strategic failure mode, not just a technical one."""
@@ -48,17 +49,8 @@ class TestShippedConfiguration:
 
     def test_arabic_profile_is_configured(self, loader: PolicyLoader):
         profile = loader.load_brand_profile("default_ar", workspace_id="ws_test")
-        assert profile.language is Language.AR
+        assert profile.language == ARABIC
         assert profile.tone_rules
-
-    def test_all_channel_specs_load(self, loader: PolicyLoader):
-        specs = {spec.key for spec in loader.load_all_channel_specs()}
-        assert specs == {Channel.INSTAGRAM, Channel.X, Channel.LINKEDIN}
-
-    def test_x_spec_reflects_platform_limits(self, loader: PolicyLoader):
-        spec = loader.load_channel_spec("x")
-        assert spec.max_characters == 280
-        assert spec.max_hashtags <= 2
 
 
 class TestErrorHandling:

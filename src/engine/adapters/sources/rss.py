@@ -14,6 +14,7 @@ from typing import Any, Final
 
 import feedparser
 
+from engine.adapters.plugins.context import PluginContext
 from engine.adapters.sources.parsing import coerce_text, parse_datetime, truncate
 from engine.core.domain.enums import SourceKind
 from engine.core.domain.source import Source, SourceDocument, compute_content_hash
@@ -144,3 +145,8 @@ def _resolve_published_at(entry: Any) -> Any:
 
             return parse_datetime(calendar.timegm(struct))
     return None
+
+
+def build_fetcher(context: PluginContext) -> RssFetcher:
+    """Entry-point factory (group ``engine.fetchers``, name ``rss``)."""
+    return RssFetcher(http=context.http, clock=context.clock)

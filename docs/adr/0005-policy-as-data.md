@@ -1,6 +1,7 @@
 # ADR 0005: Brand voice and editorial policy are data, not code
 
-- **Status:** Accepted
+- **Status:** Accepted (channel specs later moved into the pack by ADR 0015;
+  see the amendment under Decision)
 - **Date:** Phase 0
 
 ## Context
@@ -32,10 +33,18 @@ config/brand_profiles/<key>.yaml    voice, tone, audience, terminology
 config/channel_specs/<key>.yaml     platform constraints
 ```
 
-Corresponding domain entities: `EditorialPolicy`, `ScoringWeights`,
-`BrandProfile`, `ChannelSpec`. Loading is via `PolicyLoader`, which validates on
-read — a malformed brand profile fails at startup with a precise error rather
-than producing subtly wrong content overnight.
+> **Amended by ADR 0015.** `config/channel_specs/` no longer exists. Channel
+> rules moved into the domain pack as `ChannelDef`, because a platform's
+> character limit is a fact about the platform rather than a tenant preference —
+> the reasoning this ADR gives below for not tenant-scoping them, followed to
+> its conclusion. The rest of this decision stands: workspaces and brand
+> profiles are still validated YAML under `config/`.
+
+Corresponding domain entities: `EditorialPolicy`, `ScoringProfile` (ADR 0016),
+`BrandProfile`, and `ChannelDef` in the pack (ADR 0015). Loading is via
+`PolicyLoader`, which validates on read — a malformed brand profile fails at
+startup with a precise error rather than producing subtly wrong content
+overnight.
 
 `engine workspace seed` reconciles the database with these files idempotently:
 the file is the source of truth, the database a materialised view.

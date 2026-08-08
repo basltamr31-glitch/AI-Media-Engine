@@ -73,6 +73,65 @@ improve with use.
 *Revisit when:* enough selection data exists to compute reliability — realistically
 after Phase 3.
 
+**Plugin manifests.**
+ADR 0017 proposed that plugins declare a manifest -- name, version, kind, a
+JSON-schema for their configuration, and capability declarations. Discovery
+implements the identity half (name, version, group, provider, load status);
+the config schema and capabilities have no consumer yet, since nothing
+validates third-party plugin configuration.
+*Revisit when:* the first plugin takes configuration the engine must validate,
+or a marketplace UI needs to describe plugins before installing them.
+
+**Third-party transports need an open `SourceKind`.**
+`FetcherRegistry` keys on `SourceKind`, a closed enum. A third-party fetcher
+for a genuinely new transport must reuse the closest existing kind. Opening it
+is the same "enum what the engine controls, table what the market controls"
+question ADR 0015 settled for other vocabularies -- transports were kept closed
+deliberately, and that holds until someone has a transport that genuinely does
+not fit.
+*Revisit when:* the first third-party transport cannot be expressed as
+email/rss/api/web.
+
+**Version-aware selective re-parsing.**
+Every candidate records the ``parser_version`` that produced it, but nothing
+reads it. Bumping a parser's version could re-parse exactly the documents whose
+candidates came from an older one, instead of the current all-or-nothing
+``--reparse``. Cheap to add once a parser has actually been revised.
+*Revisit when:* the first parser version bump ships against a real backlog.
+
+**robots.txt for enrichment.**
+Enrichment fetches pages on a story's behalf. Today that is operator-triggered,
+sequential and small -- a request for a page a human was already sent a link
+to. A robots check (with caching, since one host serves many stories) is
+needed before it runs unattended or at volume.
+*Revisit when:* enrichment moves to a schedule, or the per-run ceiling is
+raised past a few dozen.
+
+**A PDF extractor.**
+Papers, filings and regulatory notices are frequently the primary source and
+are frequently PDFs. Enrichment records ``unsupported content type`` for each
+one, so the value of adding this is already measured rather than guessed.
+*Revisit when:* the recorded count justifies the dependency.
+
+**Semantic story clustering.**
+Resolution matches on link identity and exact wording. On the measured corpus,
+headline overlap ranked a false positive above the genuine cross-source pairs,
+so fuzzy matching ships effectively off. Embeddings would catch "OpenAI cuts
+prices" and "OpenAI Cuts GPT-5.6 Prices" -- at the cost of a model call per
+candidate.
+*Revisit when:* corroboration matters enough to pay for it, realistically once
+ranking uses it (Phase 3).
+
+**Enrichment cached by URL rather than stored on the story.**
+Fetched primary-source content lives on the ``Story``, so re-clustering
+(``engine stories reset``) discards it and every page has to be fetched again.
+The content is a property of the *URL*, not of the cluster that happens to
+point at it: a separate table keyed on the canonical URL would survive story
+churn, deduplicate two stories linking the same article, and make enrichment
+resumable across re-resolution. ``stories reset`` warns about the loss today.
+*Revisit when:* re-clustering becomes routine, or the enriched corpus is large
+enough that re-fetching it is a real cost.
+
 ---
 
 ## Scale

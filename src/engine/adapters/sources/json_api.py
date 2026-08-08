@@ -71,6 +71,7 @@ from __future__ import annotations
 import json
 from typing import Any, Final
 
+from engine.adapters.plugins.context import PluginContext
 from engine.adapters.sources.parsing import coerce_text, get_path, parse_datetime, truncate
 from engine.core.domain.enums import SourceKind
 from engine.core.domain.source import Source, SourceDocument, compute_content_hash
@@ -240,3 +241,8 @@ def _as_number(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def build_fetcher(context: PluginContext) -> JsonApiFetcher:
+    """Entry-point factory (group ``engine.fetchers``, name ``api``)."""
+    return JsonApiFetcher(http=context.http, clock=context.clock)

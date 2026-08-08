@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any
+from typing import Any, Final
 
 import structlog
 
@@ -33,6 +33,7 @@ def configure_logging(settings: Settings) -> None:
         stream=sys.stderr,
         level=getattr(logging, settings.log_level),
     )
+    _quiet_third_party_loggers()
 
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
@@ -77,3 +78,28 @@ def bind_run_context(**values: Any) -> None:
 def clear_run_context() -> None:
     """Drop all bound context. Call at the end of a run."""
     structlog.contextvars.clear_contextvars()
+
+
+#: Libraries that log at INFO/WARNING on every unit of work. Their records do
+#: not pass through structlog's renderer, so they arrive as bare text in the
+#: middle of structured output -- and each one duplicates something the engine
+#: already logs itself, with more context.
+#:
+#: Raised to the level at which the library says something the operator did not
+#: already know. Errors still surface.
+_NOISY_LOGGERS: Final = {
+    # "HTTP Request: GET ... 200 OK" -- every fetch, already logged by the
+    # stage that asked for it, together with the story it belongs to.
+    "httpx": logging.WARNING,
+    "httpcore": logging.WARNING,
+    # "discarding data: <url>" -- per-page extraction chatter, which the
+    # enrich stage converts into a structured, counted failure.
+    "trafilatura": logging.ERROR,
+    # Certificate and connection-pool detail from the Google client stack.
+    "googleapiclient.discovery_cache": logging.ERROR,
+}
+
+
+def _quiet_third_party_loggers() -> None:
+    for name, level in _NOISY_LOGGERS.items():
+        logging.getLogger(name).setLevel(level)

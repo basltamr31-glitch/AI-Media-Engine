@@ -14,8 +14,8 @@ from typing import Any, Final
 from pydantic import Field, field_validator
 
 from engine.core.domain.base import DomainModel, utcnow
-from engine.core.domain.enums import Language
 from engine.core.domain.ids import IdPrefix, new_id
+from engine.core.domain.language import ARABIC, ENGLISH, LanguageTag
 
 _SLUG_PATTERN: Final = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
 
@@ -45,8 +45,8 @@ class Workspace(DomainModel):
         default="UTC",
         description="IANA timezone. Drives publishing windows and daily boundaries.",
     )
-    languages: list[Language] = Field(
-        default_factory=lambda: [Language.AR, Language.EN],
+    languages: list[LanguageTag] = Field(
+        default_factory=lambda: [ARABIC, ENGLISH],
         min_length=1,
         description="Languages this workspace produces, in priority order.",
     )
@@ -69,7 +69,7 @@ class Workspace(DomainModel):
 
     @field_validator("languages")
     @classmethod
-    def _validate_languages(cls, value: list[Language]) -> list[Language]:
+    def _validate_languages(cls, value: list[str]) -> list[str]:
         if len(set(value)) != len(value):
             msg = "languages must not contain duplicates"
             raise ValueError(msg)

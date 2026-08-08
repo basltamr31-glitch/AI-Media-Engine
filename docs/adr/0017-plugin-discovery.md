@@ -60,6 +60,38 @@ possible later without redesign.
 loaded, and what failed and why. An extension mechanism nobody can debug is worse
 than no extension mechanism.
 
+## As implemented (Phase 1.5.7)
+
+**Groups.** Only `engine.fetchers` and `engine.parsers` are consumed, because
+those are the registries that exist. Signals, renderers, destinations and packs
+are added with the registry that reads them — an advertised group nothing reads
+is a promise the engine does not keep. (Packs are unlikely to become a group at
+all: they are files loaded at runtime, not code.)
+
+**Factory signature.** An entry point resolves to a callable taking one
+argument, a `PluginContext` (`settings`, `clock`, `http`, `resolve_path`), and
+returning the implementation. One uniform shape for every group; a shared
+dependency added later is a field on the context rather than a change to every
+plugin's constructor.
+
+**Failure isolation covers four cases, not one.** Beyond "raises on import":
+a factory that raises, a factory returning an object that does not satisfy the
+expected protocol, and a key already taken by another plugin. The type check
+matters most — without it a bad plugin fails during ingestion rather than at
+startup. Registration happens inside the error boundary so a collision costs
+the colliding plugin, not the registry.
+
+**Manifests are half-implemented, deliberately.** Every entry point examined
+produces a `PluginRecord` — group, name, entry-point value, providing
+distribution and version, load status, error — which is what `plugins list`
+and `doctor` render. The config JSON-schema and capability declarations have
+no consumer yet and are deferred to `docs/FUTURE_IDEAS.md`.
+
+**One limit worth stating.** `FetcherRegistry` keys on `SourceKind`, a closed
+enum, so a third-party fetcher for a genuinely new transport must reuse the
+closest existing kind. Parsers have no such limit (`parser_key` is a free
+string). Also deferred.
+
 ## Consequences
 
 **Good**

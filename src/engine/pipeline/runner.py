@@ -5,7 +5,10 @@ enforcing the per-run cost ceiling. Written once here so that every future
 stage inherits observability, cost accounting and failure handling for free.
 
 Stage records are committed incrementally rather than at the end: a run that
-crashes must leave behind evidence of how far it got.
+crashes must leave behind evidence of how far it got. The same reasoning
+applies to interruption -- Ctrl-C is not an ``Exception``, so it is caught
+explicitly and recorded as cancelled rather than leaving a ledger entry that
+claims to still be running.
 """
 
 from __future__ import annotations
@@ -100,6 +103,16 @@ class PipelineRunner:
             ledger.error = f"{type(exc).__name__}: {exc}"
             logger.exception("run.failed", error=ledger.error)
             raise
+        except BaseException as exc:
+            # Ctrl-C and SystemExit are not Exceptions and would otherwise fall
+            # straight through to `finally`, persisting a ledger that still
+            # claims RUNNING while carrying a finished_at. Recorded as
+            # cancelled, then re-raised untouched: interrupting a run must
+            # still interrupt it.
+            ledger.status = RunStatus.CANCELLED
+            ledger.error = f"{type(exc).__name__}: {exc}"
+            logger.warning("run.cancelled", error=ledger.error)
+            raise
         finally:
             ledger.finished_at = self._clock.now()
             with self._uow as uow:
@@ -139,7 +152,9 @@ class PipelineRunner:
 
         try:
             result = stage.run(context)
-        except Exception as exc:
+        except BaseException as exc:
+            # BaseException, for the same reason as in `run`: an interrupted
+            # stage must not be left recorded as still running.
             record.status = StageStatus.FAILED
             record.error = f"{type(exc).__name__}: {exc}"
             record.finished_at = self._clock.now()

@@ -20,22 +20,36 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from engine.adapters.clock import SystemClock
 from engine.adapters.config.policy_loader import PolicyLoader
+from engine.adapters.enrichment.extractor import TrafilaturaExtractor
 from engine.adapters.http import HttpxClient
+from engine.adapters.llm.claude import AnthropicClient
+from engine.adapters.llm.ollama import OllamaClient
 from engine.adapters.packs.loader import FilesystemPackLoader
 from engine.adapters.persistence.session import create_db_engine, create_session_factory
 from engine.adapters.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from engine.adapters.plugins.context import PluginContext
+from engine.adapters.plugins.discovery import (
+    GROUP_FETCHERS,
+    GROUP_PARSERS,
+    GROUP_SIGNALS,
+    PluginLoader,
+    PluginRecord,
+)
+from engine.adapters.scoring.registry import SignalRegistry
 from engine.adapters.sources.archive import FileSystemRawArchive, NullRawArchive
-from engine.adapters.sources.email.gmail import GmailApiClient, GmailFetcher, GoogleApiGmailClient
-from engine.adapters.sources.email.oauth import GoogleCredentialStore
-from engine.adapters.sources.json_api import JsonApiFetcher
+from engine.adapters.sources.email.oauth import GoogleCredentialStore, credential_store_from
 from engine.adapters.sources.registry import FetcherRegistry, ParserRegistry
-from engine.adapters.sources.rss import RssFetcher
 from engine.core.ports.clock import Clock
+from engine.core.ports.enrichment import ContentExtractor
 from engine.core.ports.http import HttpClient
+from engine.core.ports.llm import LLMError, LLMPort
 from engine.core.ports.packs import PackLoader
-from engine.core.ports.sources import RawDocumentArchive
-from engine.observability.logging import configure_logging
+from engine.core.ports.scoring import SignalComputer
+from engine.core.ports.sources import DocumentParser, RawDocumentArchive, SourceFetcher
+from engine.observability.logging import configure_logging, get_logger
 from engine.settings import Settings, get_settings
+
+logger = get_logger(__name__)
 
 
 def find_project_root(start: Path | None = None) -> Path:
@@ -96,21 +110,52 @@ class Container:
         )
 
     @cached_property
-    def credential_store(self) -> GoogleCredentialStore:
-        return GoogleCredentialStore(
-            credentials_file=self.resolve_path(self.settings.google_credentials_file),
-            token_file=self.resolve_path(self.settings.google_token_file),
+    def plugin_context(self) -> PluginContext:
+        """What every plugin factory receives, built-in ones included."""
+        return PluginContext(
+            settings=self.settings,
+            clock=self.clock,
+            http=self.http,
+            resolve_path=self.resolve_path,
         )
 
-    def gmail_client(self) -> GmailApiClient:
-        """Build an authenticated Gmail client.
+    @cached_property
+    def plugin_loader(self) -> PluginLoader:
+        return PluginLoader(self.plugin_context)
 
-        Deliberately a method, not a cached property: it is called lazily by the
-        fetcher only when an email source is actually processed. A workspace
-        with only RSS sources must run on a machine that has never authenticated
-        with Google.
+    @cached_property
+    def credential_store(self) -> GoogleCredentialStore:
+        return credential_store_from(self.plugin_context)
+
+    @cached_property
+    def extractor(self) -> ContentExtractor:
+        return TrafilaturaExtractor(
+            clock=self.clock,
+            min_text_length=self.settings.enrich_min_text_length,
+        )
+
+    @cached_property
+    def llm(self) -> LLMPort:
+        """The configured language model.
+
+        The only place a provider is named. Every stage above receives this as
+        an :class:`~engine.core.ports.llm.LLMPort`, so moving from a local
+        model to a hosted one is an environment variable rather than a change
+        to any pipeline code.
         """
-        return GoogleApiGmailClient(self.credential_store.load())
+        if self.settings.llm_provider == "anthropic":
+            key = self.settings.anthropic_api_key
+            if key is None:
+                raise LLMError(
+                    "ENGINE_LLM_PROVIDER=anthropic but ENGINE_ANTHROPIC_API_KEY is unset",
+                    code="missing_credentials",
+                )
+            return AnthropicClient(api_key=key.get_secret_value())
+        return OllamaClient(
+            base_url=self.settings.ollama_base_url,
+            timeout_seconds=self.settings.ollama_timeout_seconds,
+            context_tokens=self.settings.ollama_context_tokens,
+        )
 
     @cached_property
     def raw_archive(self) -> RawDocumentArchive:
@@ -120,28 +165,68 @@ class Container:
 
     @cached_property
     def parsers(self) -> ParserRegistry:
-        # Populated in Phase 2, when newsletter parsing arrives.
-        return ParserRegistry()
+        """One parser per document format, discovered from installed packages.
+
+        The engine ships no parsers until Phase 2; a third-party package can
+        supply one today by declaring an ``engine.parsers`` entry point.
+        """
+        registry = ParserRegistry()
+        self.plugin_loader.load(
+            GROUP_PARSERS,
+            expects=DocumentParser,
+            register=registry.register,
+        )
+        return registry
 
     @cached_property
     def fetchers(self) -> FetcherRegistry:
-        """One fetcher per transport.
+        """One fetcher per transport, discovered from installed packages.
 
-        Adding a *source* never touches this method -- only adding a genuinely
-        new transport does. Reddit, Hacker News and GitHub Releases are all
-        served by the existing JSON fetcher through configuration alone.
+        Adding a *source* never touches this method, and since ADR 0017 adding
+        a *transport* no longer touches it either: the engine's own three are
+        declared in its ``pyproject.toml`` alongside anyone else's. Reddit,
+        Hacker News and GitHub Releases remain configuration over the existing
+        JSON fetcher.
         """
         registry = FetcherRegistry()
-        registry.register(
-            GmailFetcher(
-                client_factory=self.gmail_client,
-                clock=self.clock,
-                lookback_days=self.settings.ingest_lookback_days,
-            )
+        self.plugin_loader.load(
+            GROUP_FETCHERS,
+            expects=SourceFetcher,
+            register=registry.register,
         )
-        registry.register(RssFetcher(http=self.http, clock=self.clock))
-        registry.register(JsonApiFetcher(http=self.http, clock=self.clock))
         return registry
+
+    @cached_property
+    def signal_computers(self) -> SignalRegistry:
+        """One computer per ranking signal, discovered from installed packages.
+
+        A vertical that ranks on ``cvss_severity`` ships the computer beside
+        its pack rather than in this repository.
+        """
+        registry = SignalRegistry()
+        self.plugin_loader.load(
+            GROUP_SIGNALS,
+            expects=SignalComputer,
+            register=registry.register,
+        )
+        return registry
+
+    def plugin_records(self) -> list[PluginRecord]:
+        """Force discovery for every group and report the outcome per plugin.
+
+        Building the registries is what performs discovery, so inspection has
+        to go through the same path rather than a parallel one that could
+        disagree with what the engine actually loaded.
+        """
+        fetchers, parsers = self.fetchers, self.parsers
+        signals = self.signal_computers
+        logger.debug(
+            "plugin.inspect",
+            fetchers=len(fetchers),
+            parsers=len(parsers),
+            signals=len(signals),
+        )
+        return self.plugin_loader.records
 
     def unit_of_work(self) -> SqlAlchemyUnitOfWork:
         """Create a fresh transactional scope. Never share one across commands."""

@@ -14,7 +14,8 @@ any single source degrades quality instead of stopping production.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from collections.abc import Mapping
+from typing import Any, Protocol, runtime_checkable
 
 from engine.core.domain.enums import SourceKind
 from engine.core.domain.source import Source, SourceDocument
@@ -73,11 +74,23 @@ class DocumentParser(Protocol):
         """Cheap check before committing to a full parse."""
         ...
 
-    def parse(self, document: SourceDocument) -> list[StoryCandidate]:
+    def parse(
+        self,
+        document: SourceDocument,
+        *,
+        config: Mapping[str, Any] | None = None,
+    ) -> list[StoryCandidate]:
         """Extract candidates, excluding advertising and sponsored sections.
 
         Parsers extract *leads* -- headline, gist, and crucially the outbound
         link. They must not be relied on for publishable prose; that comes from
         the primary source during enrichment.
+
+        Args:
+            document: The document to parse.
+            config: The owning :class:`Source`'s ``config`` block. Passed rather
+                than baked into the parser so that two sources sharing a format
+                can differ -- which is what keeps "adding a newsletter is a
+                config row" true for parsing as well as for fetching.
         """
         ...

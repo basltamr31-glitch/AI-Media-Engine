@@ -16,7 +16,7 @@ Deliberate constraints on this schema:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from sqlalchemy import (
@@ -31,12 +31,55 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+
+class UtcDateTime(TypeDecorator[datetime]):
+    """A datetime column that always returns timezone-aware UTC.
+
+    SQLite has no native timezone support, so it hands back *naive* datetimes
+    even from a ``DateTime(timezone=True)`` column. Mixing those with the
+    clock's aware values raises ``can't subtract offset-naive and offset-aware
+    datetimes`` at the first arithmetic -- and where it does not raise, it
+    compares wrong silently, which is worse.
+
+    Fixed once here rather than in each mapper: every datetime in the system
+    crosses this boundary, and a rule enforced in twenty places is a rule that
+    will be missed in the twenty-first.
+
+    Naive values going *in* are assumed UTC. Nothing in the engine produces
+    local time -- the ``DTZ`` lint rule forbids it -- so this normalises
+    hand-written fixtures and legacy rows rather than guessing at a timezone.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
 
 # Portable JSON: plain JSON on SQLite, JSONB (indexable, binary) on Postgres.
 JsonType: Final = JSON().with_variant(JSONB(), "postgresql")
+
+#: For *optional* JSON columns. Without ``none_as_null`` SQLAlchemy stores
+#: Python ``None`` as the JSON value ``null``, which is not SQL NULL -- so
+#: ``IS NULL`` silently matches nothing and "which rows lack this?" always
+#: answers none. Only ever visible when something queries for absence.
+NullableJsonType: Final = JSON(none_as_null=True).with_variant(
+    JSONB(none_as_null=True), "postgresql"
+)
 
 # Predictable constraint names make migrations deterministic across backends.
 NAMING_CONVENTION: Final[dict[str, str]] = {
@@ -58,7 +101,7 @@ class Base(DeclarativeBase):
     type_annotation_map = {  # noqa: RUF012 - SQLAlchemy API requires a plain dict
         dict[str, Any]: JsonType,
         list[str]: JsonType,
-        datetime: DateTime(timezone=True),
+        datetime: UtcDateTime(),
     }
 
 
@@ -275,6 +318,262 @@ class SourceDocumentRow(Base):
         ),
         Index("ix_source_documents_workspace_id_source_id", "workspace_id", "source_id"),
         Index("ix_source_documents_fetched_at", "fetched_at"),
+    )
+
+
+class StoryRow(Base):
+    """A canonical story, assembled from one or more candidates.
+
+    ``url_key`` and ``title_key`` are the clustering keys, stored rather than
+    recomputed so matching is an indexed lookup instead of a scan.
+    """
+
+    __tablename__ = "stories"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    canonical_headline: Mapped[str] = mapped_column(String(1024), nullable=False)
+    canonical_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    url_key: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    title_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    topics: Mapped[list[str]] = mapped_column(nullable=False, default=list)
+    entities: Mapped[list[str]] = mapped_column(nullable=False, default=list)
+    enrichment: Mapped[dict[str, Any] | None] = mapped_column(NullableJsonType, nullable=True)
+    selected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    __table_args__ = (
+        # Clustering looks up by key inside one workspace; neither key is
+        # unique, because two genuinely different stories can share a landing
+        # page and the stage decides, not the database.
+        Index("ix_stories_workspace_id_url_key", "workspace_id", "url_key"),
+        Index("ix_stories_workspace_id_title_key", "workspace_id", "title_key"),
+        Index("ix_stories_workspace_id_last_seen_at", "workspace_id", "last_seen_at"),
+        Index("ix_stories_workspace_id_status", "workspace_id", "status"),
+        # "What did we select today?" runs on every pass from here to
+        # publication, so it is an indexed column rather than a JSON probe.
+        Index("ix_stories_workspace_id_selected_at", "workspace_id", "selected_at"),
+    )
+
+
+class StoryCandidateRow(Base):
+    """One story as mentioned by one document.
+
+    Derived data, unlike ``source_documents``: re-parsing a document replaces
+    its candidates. The unique constraint on ``(document_id, ordinal)`` is what
+    makes a repeated parse a no-op rather than a duplicate.
+    """
+
+    __tablename__ = "story_candidates"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("source_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    source_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Null until resolution clusters this mention into a canonical story.
+    story_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), ForeignKey("stories.id", ondelete="SET NULL"), nullable=True
+    )
+    headline: Mapped[str] = mapped_column(String(1024), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    raw_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ordinal: Mapped[int] = mapped_column(nullable=False, default=0)
+    extracted_at: Mapped[datetime] = mapped_column(nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("document_id", "ordinal", name="uq_story_candidates_document_id_ordinal"),
+        Index("ix_story_candidates_workspace_id_document_id", "workspace_id", "document_id"),
+        Index("ix_story_candidates_workspace_id_source_id", "workspace_id", "source_id"),
+        Index("ix_story_candidates_extracted_at", "extracted_at"),
+        # Drives both "what is left to cluster?" and "what is in this story?".
+        Index("ix_story_candidates_workspace_id_story_id", "workspace_id", "story_id"),
+    )
+
+
+class EvidenceRow(Base):
+    """One claim bound to a source that supports it.
+
+    Unique on ``(story_id, kind, source_url)``: evidence is reconciled on every
+    run, and the constraint is what makes a repeated run a no-op rather than a
+    growing pile of identical rows.
+    """
+
+    __tablename__ = "evidence"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    story_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False
+    )
+    claim: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    source_title: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "story_id", "kind", "source_url", name="uq_evidence_story_id_kind_source_url"
+        ),
+        Index("ix_evidence_workspace_id_story_id", "workspace_id", "story_id"),
+        Index("ix_evidence_workspace_id_kind", "workspace_id", "kind"),
+    )
+
+
+class EditorialScoreRow(Base):
+    """Why a story ranked where it did, on one run.
+
+    Append-only history rather than one row per story: "what did we think last
+    Tuesday, and with which weights?" is the question that makes refitting the
+    weights possible, and an upsert would erase it.
+    """
+
+    __tablename__ = "editorial_scores"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    story_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    total: Mapped[float] = mapped_column(Float, nullable=False)
+    components: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+    raw: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scored_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        # One score per story per run. Re-running a run is a bug; re-scoring
+        # deliberately produces a new run id and therefore a new row.
+        UniqueConstraint("story_id", "run_id", name="uq_editorial_scores_story_id_run_id"),
+        Index("ix_editorial_scores_workspace_id_story_id", "workspace_id", "story_id"),
+        Index("ix_editorial_scores_workspace_id_total", "workspace_id", "total"),
+        Index("ix_editorial_scores_scored_at", "scored_at"),
+    )
+
+
+class ContentAssetRow(Base):
+    """One generated artifact for one story, product, channel and language.
+
+    Carries identity and workflow state only -- the text lives in the revision
+    chain (ADR 0013). ``current_revision_id`` is deliberately **not** a foreign
+    key: assets and revisions reference each other, and a real constraint in
+    both directions cannot be satisfied by any insert order.
+    """
+
+    __tablename__ = "content_assets"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    story_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    product_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    channel_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    language: Mapped[str] = mapped_column(String(16), nullable=False)
+    brand_profile_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    current_revision_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    variant: Mapped[str] = mapped_column(String(16), nullable=False, default="a")
+    evidence_ids: Mapped[list[str]] = mapped_column(nullable=False, default=list)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    __table_args__ = (
+        # One asset per addressable slot, which is what makes regenerating a
+        # single channel safe: the slot is overwritten with a new revision
+        # rather than duplicated.
+        UniqueConstraint(
+            "story_id",
+            "product_key",
+            "channel_key",
+            "language",
+            "variant",
+            name="uq_content_assets_slot",
+        ),
+        Index("ix_content_assets_workspace_id_state", "workspace_id", "state"),
+        Index("ix_content_assets_workspace_id_story_id", "workspace_id", "story_id"),
+        Index("ix_content_assets_workspace_id_created_at", "workspace_id", "created_at"),
+    )
+
+
+class ContentRevisionRow(Base):
+    """One version of an asset's text. Append-only.
+
+    The generated-versus-published difference is the training signal the whole
+    revision chain exists to preserve, so nothing here is ever updated in place.
+    """
+
+    __tablename__ = "content_revisions"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    asset_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("content_assets.id", ondelete="CASCADE"), nullable=False
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    origin: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    parent_revision_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Columns rather than a JSON blob, matching the run ledger: these are
+    # summed and grouped, and arithmetic over JSON is a query nobody writes.
+    #
+    # ``server_default`` as well as ``default``: the migration needed one to
+    # add NOT NULL columns to a table that already held rows, and declaring it
+    # here too keeps the model and the database in agreement -- otherwise every
+    # autogenerate run reports a difference that is not really there.
+    input_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    output_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    cache_read_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    cache_write_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    cost_usd: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0, server_default=text("0")
+    )
+    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "asset_id", "revision_number", name="uq_content_revisions_asset_id_revision_number"
+        ),
+        Index("ix_content_revisions_workspace_id_asset_id", "workspace_id", "asset_id"),
     )
 
 

@@ -33,17 +33,23 @@ dependencies = [
     "feedparser>=6.0,<7",
     "google-api-python-client>=2.150,<3",
     "google-auth-oauthlib>=1.2,<2",
+    # --- Phase 2: parsing ---
+    # Newsletter bodies are machine-generated email HTML. Hand-rolling a
+    # tolerant reader for that is exactly the code that rots.
+    "beautifulsoup4>=4.12,<5",
+    # --- Phase 2: primary-source extraction ---
+    # Separating an article from its navigation, consent banner and comment
+    # thread is a solved problem; a home-grown version of it decays as the
+    # web changes. Required rather than optional: without it the engine can
+    # only republish what newsletters said, which is the one thing it must not do.
+    "trafilatura>=1.12,<3",
+    "lxml>=5.3,<7",
 ]
 
 # Optional extras map 1:1 onto roadmap phases. They are declared but NOT installed,
 # so the dependency graph itself documents the plan and prevents accidental early use.
 [project.optional-dependencies]
 llm = ["anthropic>=0.40,<1"]                                    # Phase 3 - generation
-enrichment = [                                                   # Phase 2 - primary-source extraction
-    "beautifulsoup4>=4.12,<5",
-    "lxml>=5.3,<7",
-    "trafilatura>=1.12,<3",
-]
 postgres = ["psycopg[binary]>=3.2,<4"]                           # Phase 6+ - multi-tenant storage
 api = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.32,<1"]        # Phase 7+ - SaaS surface
 dev = [
@@ -57,6 +63,32 @@ dev = [
 
 [project.scripts]
 engine = "engine.cli.main:app"
+
+# The engine's own fetchers are plugins (ADR 0017). They are discovered through
+# exactly the mechanism a third-party package would use, so the extension path
+# is exercised on every run and cannot rot. Each value is a factory taking a
+# PluginContext; the name is the registry key.
+#
+# NOTE: entry points are baked into the installed metadata. After editing this
+# block, re-run `pip install -e . --no-deps` or the change is invisible.
+[project.entry-points."engine.fetchers"]
+email = "engine.adapters.sources.email.gmail:build_fetcher"
+rss = "engine.adapters.sources.rss:build_fetcher"
+api = "engine.adapters.sources.json_api:build_fetcher"
+
+[project.entry-points."engine.parsers"]
+tldr_newsletter = "engine.adapters.parsers.tldr:build_parser"
+arxiv_rss = "engine.adapters.parsers.arxiv:build_parser"
+hackernews_api = "engine.adapters.parsers.hackernews:build_parser"
+
+# One computer per ranking signal the ai-news pack declares. A vertical
+# ranking on CVSS severity or trial phase ships its own beside its pack.
+[project.entry-points."engine.signals"]
+corroboration = "engine.adapters.scoring.computers:build_corroboration"
+source_authority = "engine.adapters.scoring.computers:build_source_authority"
+recency = "engine.adapters.scoring.computers:build_recency"
+prominence = "engine.adapters.scoring.computers:build_prominence"
+audience_fit = "engine.adapters.scoring.computers:build_audience_fit"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engine"]

@@ -11,8 +11,9 @@ import pytest
 from pydantic import ValidationError
 
 from engine.core.domain.content import ContentAsset, ContentRevision, RevisionOrigin
-from engine.core.domain.enums import Channel, ContentKind, ContentState, Language
+from engine.core.domain.enums import ContentState
 from engine.core.domain.ids import IdPrefix, is_valid_id
+from engine.core.domain.language import ENGLISH
 
 SYSTEM = "act_system"
 HUMAN = "act_alice"
@@ -24,9 +25,9 @@ def asset() -> ContentAsset:
         workspace_id="ws_1",
         story_id="sty_1",
         run_id="run_1",
-        kind=ContentKind.SOCIAL_POST,
-        channel=Channel.LINKEDIN,
-        language=Language.EN,
+        product_key="social_post",
+        channel_key="linkedin",
+        language=ENGLISH,
         brand_profile_key="default_en",
     )
 

@@ -133,6 +133,14 @@ def seed(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
+    # A weight naming a signal the pack does not declare would contribute zero
+    # silently, and a ranking that is quietly wrong is worse than one that fails.
+    try:
+        config.editorial.scoring.validate_against(pack.ranking_signal_keys, pack_key=pack.key)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
     with container.unit_of_work() as uow:
         account, _ = ensure_account(
             uow,
@@ -166,7 +174,16 @@ def seed(
     created, updated, deactivated = _sync_sources(container, workspace, config)
 
     console.print(f"[green]Workspace {action}:[/green] {workspace.slug} ({workspace.id})")
-    console.print(f"Domain pack: [cyan]{pack.identifier}[/cyan] ({len(pack.taxonomy)} categories)")
+    scoring = (
+        pack.default_scoring_profile
+        if config.editorial.scoring.is_empty
+        else config.editorial.scoring
+    )
+    inherited = " (inherited)" if config.editorial.scoring.is_empty else ""
+    console.print(
+        f"Domain pack: [cyan]{pack.identifier}[/cyan] "
+        f"({len(pack.taxonomy)} categories, {len(scoring.weights)} ranking signals{inherited})"
+    )
     console.print(
         f"Sources: [cyan]{created}[/cyan] created, [cyan]{updated}[/cyan] updated, "
         f"[cyan]{deactivated}[/cyan] deactivated"
@@ -207,7 +224,7 @@ def list_workspaces(
         table.add_row(
             workspace.slug,
             workspace.name,
-            ", ".join(language.value for language in workspace.languages),
+            ", ".join(workspace.languages),
             workspace.timezone,
             "yes" if workspace.is_active else "no",
             workspace.id,

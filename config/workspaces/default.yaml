@@ -21,12 +21,18 @@ languages:
 # abstraction properly rather than in theory.
 sources:
   # Newsletter: a tip sheet. Tells us what to look at, never what to publish.
+  #
+  # `config` reaches both the fetcher and the parser, so a second newsletter of
+  # the same format that names its ad sections differently is a config edit
+  # rather than a code change. See docs/PARSING.md.
   - kind: email
     name: TLDR AI
     identifier: dan@tldrnewsletter.com
     parser_key: tldr_newsletter
     trust_weight: 0.60
     config:
+      # Whole sections dropped by heading. Individually marked "(Sponsor)"
+      # items are removed by the parser regardless of this list.
       strip_sections:
         - sponsor
         - advertisement
@@ -72,6 +78,10 @@ sources:
     trust_weight: 0.75
     config:
       max_items: 40
+      # What this source's links are worth in the provenance ledger. Declared
+      # rather than inferred: a URL cannot tell the engine whether a page is
+      # the authors' own announcement or somebody's report of it.
+      evidence_kind: primary
 
 # ---------------------------------------------------------------------------
 # Adding more sources is configuration, not code. Both examples below work
@@ -122,12 +132,16 @@ editorial:
   # Enforces "newsletters are tips, not text". Disabling this would turn the
   # product into a republisher: a legal risk and a commodity.
   require_primary_source: true
-  weights:
-    corroboration: 0.30
-    source_authority: 0.20
-    recency: 0.20
-    prominence: 0.15
-    audience_fit: 0.15
+  # Signal weights. Keys must be ranking signals the active pack declares
+  # (ADR 0016). Omit this block entirely to inherit the pack's defaults --
+  # which is what these values happen to be, spelled out here as an example.
+  scoring:
+    weights:
+      corroboration: 0.30
+      source_authority: 0.20
+      recency: 0.20
+      prominence: 0.15
+      audience_fit: 0.15
   priority_topics:
     - foundation models
     - AI agents

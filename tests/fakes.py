@@ -10,12 +10,19 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
+
+from pydantic import BaseModel
 
 from engine.core.domain.enums import SourceKind
+from engine.core.domain.ledger import TokenUsage
 from engine.core.domain.source import Source, SourceDocument
+from engine.core.domain.story import EnrichedSource, StoryCandidate
+from engine.core.ports.enrichment import ExtractionError
 from engine.core.ports.http import HttpError, HttpResponse
+from engine.core.ports.llm import LLMError, LLMRequest, LLMResult, SchemaT
 
 
 class FakeHttpClient:
@@ -27,10 +34,12 @@ class FakeHttpClient:
         *,
         error: Exception | None = None,
         status_code: int = 200,
+        content_type: str = "application/json",
     ) -> None:
         self._responses = responses or {}
         self._error = error
         self._status_code = status_code
+        self._content_type = content_type
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
 
     def get(
@@ -49,7 +58,7 @@ class FakeHttpClient:
             url=url,
             status_code=self._status_code,
             text=self._responses[url],
-            headers={"content-type": "application/json"},
+            headers={"content-type": self._content_type},
         )
 
 
@@ -182,6 +191,128 @@ class GeneratingFakeFetcher:
             )
             for index in range(min(self._count, limit))
         ]
+
+
+class FakeParser:
+    """A :class:`DocumentParser` producing a fixed number of candidates.
+
+    Records the config it was handed, so the "source config reaches the parser"
+    contract is testable without a real newsletter.
+    """
+
+    def __init__(
+        self,
+        parser_key: str,
+        *,
+        per_document: int = 1,
+        accepts: bool = True,
+        fail_on_title: str | None = None,
+    ) -> None:
+        self._parser_key = parser_key
+        self._per_document = per_document
+        self._accepts = accepts
+        self._fail_on_title = fail_on_title
+        self.calls = 0
+        self.configs: list[dict[str, Any] | None] = []
+
+    @property
+    def parser_key(self) -> str:
+        return self._parser_key
+
+    def can_parse(self, document: SourceDocument) -> bool:
+        return self._accepts
+
+    def parse(
+        self,
+        document: SourceDocument,
+        *,
+        config: Mapping[str, Any] | None = None,
+    ) -> list[StoryCandidate]:
+        self.calls += 1
+        self.configs.append(dict(config) if config is not None else None)
+        if self._fail_on_title and self._fail_on_title in (document.title or ""):
+            msg = "template changed"
+            raise ValueError(msg)
+        return [
+            StoryCandidate(
+                workspace_id=document.workspace_id,
+                document_id=document.id,
+                source_id=document.source_id,
+                headline=f"{document.title} story {index}",
+                summary="Summary.",
+                primary_url=f"https://example.test/{document.id}/{index}",
+                ordinal=index,
+            )
+            for index in range(self._per_document)
+        ]
+
+
+class FakeExtractor:
+    """A :class:`ContentExtractor` returning fixed text, or failing.
+
+    Lets the enrich stage be tested without trafilatura's judgement in the
+    loop: what is under test there is what the stage does with a success or a
+    failure, not which one the extractor should have produced.
+    """
+
+    def __init__(
+        self, *, text: str = "The announcement in full.", fails_with: str | None = None
+    ) -> None:
+        self._text = text
+        self._fails_with = fails_with
+        self.calls: list[str] = []
+
+    def extract(self, html: str, *, url: str) -> EnrichedSource:
+        self.calls.append(url)
+        if self._fails_with:
+            raise ExtractionError(url, self._fails_with)
+        return EnrichedSource(
+            url=url,
+            title="An extracted title",
+            text=self._text,
+            extraction_method="fake",
+        )
+
+
+class FakeLLM:
+    """An :class:`LLMPort` returning a fixed value, or failing.
+
+    Exists for testing what *callers* do with a generation, not whether a model
+    can produce one -- that question is settled by running a real model, and a
+    fake that answered it would only be measuring itself.
+    """
+
+    def __init__(
+        self,
+        *,
+        value: BaseModel | None = None,
+        fails_with: str | None = None,
+        usage: TokenUsage | None = None,
+        cost_usd: float = 0.0,
+    ) -> None:
+        self._value = value
+        self._fails_with = fails_with
+        self._usage = usage or TokenUsage(input_tokens=100, output_tokens=20)
+        self._cost_usd = cost_usd
+        self.requests: list[LLMRequest] = []
+
+    def generate_structured(self, request: LLMRequest, schema: type[SchemaT]) -> LLMResult[SchemaT]:
+        self.requests.append(request)
+        if self._fails_with:
+            raise LLMError(self._fails_with, model=request.model)
+        # A minimal instance when none was supplied, so callers that only care
+        # about the plumbing need not hand-construct one per schema.
+        value = schema.model_construct() if self._value is None else cast(SchemaT, self._value)
+        return LLMResult[SchemaT](
+            value=value,
+            model=request.model,
+            usage=self._usage,
+            cost_usd=self._cost_usd,
+            stop_reason="end_turn",
+        )
+
+    def estimate_cost_usd(self, usage: TokenUsage, model: str) -> float:
+        return self._cost_usd
 
 
 class RecordingArchive:

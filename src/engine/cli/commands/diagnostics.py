@@ -18,9 +18,16 @@ from engine import __version__
 from engine.adapters.config.policy_loader import PolicyLoadError
 from engine.adapters.sources.email.oauth import GoogleAuthError
 from engine.cli.container import build_container
+from engine.core.ports.packs import PackLoadError, PackNotFoundError
+from engine.settings import Settings
 
 console = Console()
-app = typer.Typer(help="Environment diagnostics and configuration inspection.")
+#: Mounted as ``engine config``. ``doctor`` is deliberately *not* a command on
+#: this group -- it is registered at the top level in ``cli.main``, because it
+#: is the first thing anyone runs and "is my environment healthy?" is not a
+#: question about configuration. Registering it here as well would expose an
+#: undocumented ``engine config doctor`` alias.
+app = typer.Typer(help="Configuration inspection.")
 
 _OK = "[green]OK[/green]"
 _WARN = "[yellow]WARN[/yellow]"
@@ -95,7 +102,48 @@ def _check_optional_dependency(label: str, module: str, phase: str) -> Check:
     return Check(label, _OK, "installed")
 
 
-@app.command("doctor")
+def _check_llm(settings: Settings) -> list[Check]:
+    """Report on the *configured* provider, not on every provider that exists.
+
+    Generation is never a hard failure here: the whole ingestion and ranking
+    pipeline runs perfectly well on a machine with no model at all. But "the
+    server is down" and "the model was never pulled" look identical at the
+    point of use and call for different responses, so they are told apart.
+    """
+    if settings.llm_provider == "anthropic":
+        checks = [
+            _check_optional_dependency("Anthropic SDK", "anthropic", "the anthropic provider")
+        ]
+        if settings.anthropic_api_key is None:
+            checks.append(Check("LLM credentials", _FAIL, "ENGINE_ANTHROPIC_API_KEY unset"))
+        else:
+            checks.append(Check("LLM credentials", _OK, f"key set, {settings.generation_model}"))
+        return checks
+
+    from engine.adapters.llm.ollama import OllamaClient
+    from engine.core.ports.llm import LLMError
+
+    # A short timeout on purpose: doctor answers questions, it does not wait
+    # out a dead socket's full generation budget.
+    client = OllamaClient(base_url=settings.ollama_base_url, timeout_seconds=3.0)
+    try:
+        installed = client.list_models()
+    except LLMError:
+        return [
+            Check("LLM (ollama)", _WARN, f"not reachable at {settings.ollama_base_url}"),
+        ]
+    finally:
+        client.close()
+
+    wanted = settings.ollama_model
+    # Ollama reports tags in full (`qwen3:4b`); a bare name means `:latest`.
+    known = {name.removesuffix(":latest") for name in installed}
+    if wanted.removesuffix(":latest") not in known:
+        detail = f"{wanted} not pulled -- run: ollama pull {wanted}"
+        return [Check("LLM (ollama)", _WARN, detail)]
+    return [Check("LLM (ollama)", _OK, f"{settings.ollama_base_url}, model {wanted}")]
+
+
 def doctor() -> None:
     """Verify the environment is correctly configured."""
     container = build_container()
@@ -124,18 +172,44 @@ def doctor() -> None:
                 detail = f"{len(slugs)} workspace(s): {', '.join(slugs)}"
                 checks.append(Check("Config", _OK, detail))
 
-    try:
-        specs = loader.load_all_channel_specs()
-    except PolicyLoadError as exc:
-        checks.append(Check("Channel specs", _FAIL, str(exc)))
+    pack_keys = container.packs.list_keys()
+    if not pack_keys:
+        checks.append(Check("Domain packs", _FAIL, "no packs found"))
     else:
-        checks.append(Check("Channel specs", _OK, f"{len(specs)} loaded"))
+        invalid = []
+        for pack_key in pack_keys:
+            try:
+                container.packs.load(pack_key)
+            except (PackNotFoundError, PackLoadError) as exc:
+                invalid.append(f"{pack_key}: {str(exc)[:40]}")
+        if invalid:
+            checks.append(Check("Domain packs", _FAIL, "; ".join(invalid)))
+        else:
+            checks.append(Check("Domain packs", _OK, f"{len(pack_keys)}: {', '.join(pack_keys)}"))
 
-    checks.append(_check_optional_dependency("Anthropic SDK", "anthropic", "Phase 3"))
+    checks.extend(_check_llm(settings))
 
+    # Fetchers arrive through entry-point discovery (ADR 0017), so a failed
+    # plugin shows up here as a quietly shorter list. Report it explicitly:
+    # "why is my transport missing?" should be answerable by the first command
+    # anyone runs.
+    records = container.plugin_records()
+    fetchers = container.fetchers
     checks.append(
-        Check("Fetchers", _OK, f"{len(container.fetchers)}: {', '.join(container.fetchers.keys())}")
+        Check(
+            "Fetchers",
+            _OK if fetchers else _FAIL,
+            f"{len(fetchers)}: {', '.join(fetchers.keys())}" if fetchers else "none discovered",
+        )
     )
+    failed_plugins = [record for record in records if record.failed]
+    if failed_plugins:
+        names = ", ".join(record.name for record in failed_plugins)
+        checks.append(
+            Check("Plugins", _FAIL, f"{names} failed to load -- run: engine plugins list")
+        )
+    else:
+        checks.append(Check("Plugins", _OK, f"{len(records)} discovered, all loaded"))
 
     # Gmail readiness is a warning, never a failure: RSS and API sources ingest
     # perfectly well on a machine that has never authenticated with Google.
@@ -155,11 +229,6 @@ def doctor() -> None:
             checks.append(Check("Google token", _WARN, str(exc)[:70]))
         else:
             checks.append(Check("Google token", _OK, str(store.token_file)))
-
-    if settings.anthropic_api_key is None:
-        checks.append(Check("LLM credentials", _WARN, "ENGINE_ANTHROPIC_API_KEY unset (Phase 3)"))
-    else:
-        checks.append(Check("LLM credentials", _OK, "configured"))
 
     table = Table(title=f"engine doctor  (v{__version__}, env={settings.environment})")
     table.add_column("Check", style="cyan")

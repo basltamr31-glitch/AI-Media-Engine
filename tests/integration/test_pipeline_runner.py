@@ -193,3 +193,57 @@ def test_dry_run_flag_reaches_the_stage(runner: PipelineRunner, persisted_worksp
         dry_run=True,
     )
     assert ledger.meta["dry_run"] is True
+
+
+class TestInterruption:
+    """Ctrl-C is not an ``Exception``; a ledger that ignores it lies."""
+
+    def test_an_interrupted_run_is_recorded_as_cancelled(
+        self, uow, clock, settings, persisted_workspace
+    ):
+        class Interrupting:
+            @property
+            def name(self) -> str:
+                return "interrupting"
+
+            def run(self, context):
+                raise KeyboardInterrupt
+
+        runner = PipelineRunner(uow=uow, clock=clock, settings=settings)
+
+        with pytest.raises(KeyboardInterrupt):
+            runner.run(
+                workspace_id=persisted_workspace.id,
+                pipeline="test",
+                stages=[Interrupting()],
+            )
+
+        with uow as active:
+            run = active.runs.list_recent(persisted_workspace.id, limit=1)[0]
+        assert run.status is RunStatus.CANCELLED
+        assert run.finished_at is not None
+        assert "KeyboardInterrupt" in (run.error or "")
+
+    def test_the_interrupted_stage_is_not_left_running(
+        self, uow, clock, settings, persisted_workspace
+    ):
+        class Interrupting:
+            @property
+            def name(self) -> str:
+                return "interrupting"
+
+            def run(self, context):
+                raise KeyboardInterrupt
+
+        runner = PipelineRunner(uow=uow, clock=clock, settings=settings)
+        with pytest.raises(KeyboardInterrupt):
+            runner.run(
+                workspace_id=persisted_workspace.id,
+                pipeline="test",
+                stages=[Interrupting()],
+            )
+
+        with uow as active:
+            run = active.runs.list_recent(persisted_workspace.id, limit=1)[0]
+            stages = active.runs.list_stages(persisted_workspace.id, run.id)
+        assert [stage.status for stage in stages] == [StageStatus.FAILED]

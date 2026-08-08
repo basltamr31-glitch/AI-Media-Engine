@@ -12,14 +12,17 @@ supplies it. Consequences:
 
 from __future__ import annotations
 
+from datetime import datetime
 from types import TracebackType
 from typing import Protocol, runtime_checkable
 
 from engine.core.domain.account import Account, Actor, Membership
-from engine.core.domain.enums import SubjectType
+from engine.core.domain.content import AssetSpend, ContentAsset, ContentRevision
+from engine.core.domain.enums import StoryStatus, SubjectType
 from engine.core.domain.ledger import RunLedger, StageRecord
 from engine.core.domain.signal import Signal
 from engine.core.domain.source import Source, SourceDocument
+from engine.core.domain.story import EditorialScore, Evidence, Story, StoryCandidate
 from engine.core.domain.workspace import Workspace
 
 
@@ -114,9 +117,166 @@ class SourceDocumentRepository(Protocol):
         self, workspace_id: str, source_id: str, *, limit: int = 100
     ) -> list[SourceDocument]: ...
 
+    def list_for_workspace(
+        self, workspace_id: str, *, limit: int = 200, source_id: str | None = None
+    ) -> list[SourceDocument]: ...
+
     def count_for_source(self, workspace_id: str, source_id: str) -> int:
         """Total documents ingested from a source. Powers `engine ingest status`."""
         ...
+
+
+@runtime_checkable
+class StoryCandidateRepository(Protocol):
+    """Candidates are derived data: re-parsing a document replaces them."""
+
+    def add_many(self, candidates: list[StoryCandidate]) -> int: ...
+
+    def list_for_document(self, workspace_id: str, document_id: str) -> list[StoryCandidate]: ...
+
+    def list_for_workspace(
+        self, workspace_id: str, *, limit: int = 100, source_id: str | None = None
+    ) -> list[StoryCandidate]: ...
+
+    def documents_with_candidates(self, workspace_id: str, document_ids: list[str]) -> set[str]: ...
+
+    def delete_for_document(self, workspace_id: str, document_id: str) -> int: ...
+
+    def count_for_workspace(self, workspace_id: str) -> int: ...
+
+    def list_unresolved(self, workspace_id: str, *, limit: int = 500) -> list[StoryCandidate]: ...
+
+    def list_for_story(self, workspace_id: str, story_id: str) -> list[StoryCandidate]: ...
+
+    def assign_to_story(
+        self, workspace_id: str, story_id: str, candidate_ids: list[str]
+    ) -> int: ...
+
+    def count_by_source(self, workspace_id: str) -> dict[str, int]: ...
+
+
+@runtime_checkable
+class StoryRepository(Protocol):
+    """Canonical stories, assembled from candidates by resolution."""
+
+    def add(self, story: Story) -> Story: ...
+
+    def update(self, story: Story) -> Story: ...
+
+    def get(self, workspace_id: str, story_id: str) -> Story | None: ...
+
+    def list_recent(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 100,
+        since: datetime | None = None,
+        status: StoryStatus | None = None,
+    ) -> list[Story]: ...
+
+    def list_corroborated(
+        self, workspace_id: str, *, min_sources: int = 2, limit: int = 100
+    ) -> list[Story]: ...
+
+    def selected_since(self, workspace_id: str, *, since: datetime) -> list[Story]: ...
+
+    def list_selected(self, workspace_id: str, *, limit: int = 50) -> list[Story]: ...
+
+    def list_needing_enrichment(
+        self, workspace_id: str, *, limit: int = 25, max_attempts: int = 3
+    ) -> list[Story]: ...
+
+    def delete_all(self, workspace_id: str) -> int: ...
+
+    def count_for_workspace(self, workspace_id: str) -> int: ...
+
+    def count_by_status(self, workspace_id: str) -> dict[str, int]: ...
+
+
+@runtime_checkable
+class EvidenceRepository(Protocol):
+    """The provenance ledger: which sources support which claim."""
+
+    def add_many(self, records: list[Evidence]) -> int: ...
+
+    def list_for_story(self, workspace_id: str, story_id: str) -> list[Evidence]: ...
+
+    def count_for_workspace(self, workspace_id: str) -> int: ...
+
+    def count_by_kind(self, workspace_id: str) -> dict[str, int]: ...
+
+    def delete_for_story(self, workspace_id: str, story_id: str) -> int: ...
+
+
+@runtime_checkable
+class EditorialScoreRepository(Protocol):
+    """Scores, kept as history: today's ranking and every earlier one."""
+
+    def add_many(self, scores: list[EditorialScore]) -> int: ...
+
+    def latest_for_story(self, workspace_id: str, story_id: str) -> EditorialScore | None: ...
+
+    def history_for_story(self, workspace_id: str, story_id: str) -> list[EditorialScore]: ...
+
+    def stories_scored(self, workspace_id: str, story_ids: list[str]) -> set[str]: ...
+
+    def top_for_run(
+        self, workspace_id: str, run_id: str, *, limit: int = 20
+    ) -> list[EditorialScore]: ...
+
+    def top_recent(self, workspace_id: str, *, limit: int = 20) -> list[EditorialScore]: ...
+
+    def count_for_workspace(self, workspace_id: str) -> int: ...
+
+
+@runtime_checkable
+class ContentAssetRepository(Protocol):
+    """Generated artifacts and their revision chain.
+
+    Assets and revisions live behind one repository because they are written
+    together and never independently useful: an asset with no revision has no
+    text, and a revision with no asset has nowhere to belong.
+    """
+
+    def add(self, asset: ContentAsset) -> ContentAsset: ...
+
+    def update(self, asset: ContentAsset) -> ContentAsset: ...
+
+    def get(self, workspace_id: str, asset_id: str) -> ContentAsset | None: ...
+
+    def find_slot(
+        self,
+        workspace_id: str,
+        *,
+        story_id: str,
+        product_key: str,
+        channel_key: str | None,
+        language: str,
+        variant: str = "a",
+    ) -> ContentAsset | None:
+        """The asset occupying one addressable slot, if it exists.
+
+        What makes regeneration append a revision rather than duplicate a row.
+        """
+        ...
+
+    def list_for_story(self, workspace_id: str, story_id: str) -> list[ContentAsset]: ...
+
+    def list_recent(self, workspace_id: str, *, limit: int = 50) -> list[ContentAsset]: ...
+
+    def count_for_workspace(self, workspace_id: str) -> int: ...
+
+    def add_revision(self, revision: ContentRevision) -> ContentRevision: ...
+
+    def get_revision(self, workspace_id: str, revision_id: str) -> ContentRevision | None: ...
+
+    def latest_revision(self, workspace_id: str, asset_id: str) -> ContentRevision | None: ...
+
+    def list_revisions(self, workspace_id: str, asset_id: str) -> list[ContentRevision]: ...
+
+    def spend_by_asset(self, workspace_id: str, *, limit: int = 50) -> list[AssetSpend]: ...
+
+    def total_spend(self, workspace_id: str, *, since: datetime | None = None) -> AssetSpend: ...
 
 
 @runtime_checkable
@@ -166,6 +326,21 @@ class UnitOfWork(Protocol):
 
     @property
     def documents(self) -> SourceDocumentRepository: ...
+
+    @property
+    def candidates(self) -> StoryCandidateRepository: ...
+
+    @property
+    def stories(self) -> StoryRepository: ...
+
+    @property
+    def evidence(self) -> EvidenceRepository: ...
+
+    @property
+    def scores(self) -> EditorialScoreRepository: ...
+
+    @property
+    def assets(self) -> ContentAssetRepository: ...
 
     @property
     def runs(self) -> RunRepository: ...

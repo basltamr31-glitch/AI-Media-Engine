@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["local", "staging", "production"]
 LogFormat = Literal["console", "json"]
+LlmProvider = Literal["ollama", "anthropic"]
 
 
 class Settings(BaseSettings):
@@ -70,12 +71,79 @@ class Settings(BaseSettings):
     #: Archiving raw payloads costs disk and buys replay, fixtures and provenance.
     ingest_archive_raw: bool = True
 
+    #: How many stored documents one parse run considers. Higher than the
+    #: ingest ceiling because parsing is local work over an existing backlog,
+    #: not network calls against someone else's rate limit.
+    parse_max_documents: int = Field(default=200, gt=0, le=5000)
+
+    #: How many unresolved candidates one resolve run considers.
+    resolve_max_candidates: int = Field(default=500, gt=0, le=10000)
+    #: Days of existing stories new mentions are matched against. A story
+    #: covered on Monday and again on Thursday is one story.
+    resolve_window_days: int = Field(default=7, gt=0, le=90)
+    #: Headline overlap required to merge two mentions with different links.
+    #: Set above every pair observed in the calibration corpus: a wrong merge
+    #: cannot be undone downstream, a missed one costs a duplicate.
+    resolve_similarity_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+
+    #: Primary sources fetched per enrich run. Deliberately small: each one
+    #: is a request to somebody else's server, made one at a time.
+    enrich_max_stories: int = Field(default=25, gt=0, le=500)
+    #: Attempts before a URL is presumed permanently unreachable. Most
+    #: enrichment failures -- paywalls, dead links -- never recover.
+    enrich_max_attempts: int = Field(default=3, gt=0, le=10)
+    #: Characters below which an extraction is a stub rather than an article.
+    enrich_min_text_length: int = Field(default=400, gt=0, le=10000)
+
+    #: Stories whose provenance is reconciled per run. Cheap -- no network,
+    #: no model -- so this is generous where the enrich ceiling is not.
+    evidence_max_stories: int = Field(default=200, gt=0, le=5000)
+
+    #: Stories scored per run. Pure arithmetic over loaded rows, so this is
+    #: bounded by memory rather than by anyone else's rate limit.
+    score_max_stories: int = Field(default=200, gt=0, le=5000)
+
+    #: The period the selection quota is counted over. A day, matching the
+    #: publishing rhythm: two runs in one morning top up to the day's limit
+    #: rather than producing two batches.
+    select_window_hours: int = Field(default=24, gt=0, le=720)
+
+    #: Selected stories written for in one run. Small because each story
+    #: multiplies out by channel and language: three stories across three
+    #: channels and two languages is already eighteen model calls.
+    generate_max_stories: int = Field(default=5, gt=0, le=100)
+    #: Output ceiling per post. Sized for Arabic rather than English: the same
+    #: post costs roughly twice as many tokens in Arabic, and at 2048 a
+    #: full-length Arabic LinkedIn post was observed running out of budget
+    #: mid-sentence while its English twin finished comfortably.
+    generate_max_tokens: int = Field(default=4096, ge=256, le=32_000)
+
     http_timeout_seconds: float = Field(default=30.0, gt=0)
     #: Identifying ourselves honestly is both etiquette and self-interest: an
     #: anonymous scraper is the first thing a publisher blocks.
     http_user_agent: str = "ai-media-engine/0.1 (+https://github.com/; contact via repo)"
 
     # --- LLM (Phase 3) ---------------------------------------------------
+    #: Which implementation of the LLM port the container builds. Local by
+    #: default: generation quality has to be judged before it is paid for, and
+    #: a per-token bill turns every prompt iteration into a purchase decision.
+    llm_provider: LlmProvider = "ollama"
+
+    #: Local inference. Costs nothing, runs offline, and keeps scraped article
+    #: text on this machine rather than in a third party's training corpus.
+    ollama_base_url: str = "http://localhost:11434"
+    #: Small enough to run on a laptop with a browser and an IDE open, and
+    #: verified to extract accurately from real article text. ``qwen3:4b`` is
+    #: the better model where ~3.5 GB of RAM is free -- see docs/LLM.md.
+    ollama_model: str = "qwen3:1.7b"
+    #: Minutes, not seconds: a CPU-bound generation is slow but not broken.
+    ollama_timeout_seconds: float = Field(default=600.0, gt=0)
+    #: Ollama's own default silently truncates a long article, which is how a
+    #: system starts writing confidently about text it never read.
+    ollama_context_tokens: int = Field(default=8192, ge=2048, le=131_072)
+
+    #: Hosted provider, enabled by setting ``llm_provider`` once local output
+    #: is good enough to be worth paying for.
     anthropic_api_key: SecretStr | None = None
     generation_model: str = "claude-opus-5"
     extraction_model: str = "claude-haiku-4-5"
@@ -98,6 +166,16 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def active_model(self) -> str:
+        """The model name to send to whichever provider is configured.
+
+        Model names are provider-specific, so the *setting* that supplies them
+        has to follow the provider. Resolved here rather than at each call site
+        so no caller can ask Ollama for ``claude-opus-5``.
+        """
+        return self.ollama_model if self.llm_provider == "ollama" else self.generation_model
 
     @property
     def raw_archive_dir(self) -> Path:

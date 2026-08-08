@@ -4,9 +4,12 @@ Phase 0 ships the contract and a no-op stage only. Concrete stages arrive with
 the phase that needs them:
 
     Phase 1  ingest      fetch documents from configured sources
-    Phase 2  extract     documents -> story candidates
-             resolve     cluster candidates, enrich from the primary source
-    Phase 3  editorial   score and select
+    Phase 2  parse       documents -> story candidates
+             resolve     cluster candidates into canonical stories
+             enrich      fetch and extract each story's primary source
+             evidence    record which sources support which claim
+    Phase 3  score       rank stories against the workspace profile
+             select      choose what to produce
              generate    brand voice x channel -> content assets
     Phase 4  render      Markdown and JSON output
     Phase 5  distribute  export for publishing

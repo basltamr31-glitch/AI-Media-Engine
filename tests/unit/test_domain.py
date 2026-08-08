@@ -11,14 +11,12 @@ from pydantic import ValidationError
 
 from engine.core.domain.content import ContentAsset
 from engine.core.domain.enums import (
-    Channel,
-    ContentKind,
     ContentState,
     EvidenceKind,
-    Language,
     can_transition,
 )
-from engine.core.domain.policy import ScoringWeights
+from engine.core.domain.language import ARABIC, ENGLISH
+from engine.core.domain.policy import ScoringProfile
 from engine.core.domain.source import compute_content_hash
 from engine.core.domain.story import MAX_QUOTE_WORDS, Evidence, Story
 from engine.core.domain.workspace import Workspace
@@ -40,7 +38,7 @@ class TestWorkspace:
                 account_id="acc_x",
                 slug="valid-slug",
                 name="X",
-                languages=[Language.AR, Language.AR],
+                languages=[ARABIC, ARABIC],
             )
 
 
@@ -104,9 +102,9 @@ class TestContentStateMachine:
             workspace_id="ws_1",
             story_id="sty_1",
             run_id="run_1",
-            kind=ContentKind.SOCIAL_POST,
-            channel=Channel.LINKEDIN,
-            language=Language.EN,
+            product_key="social_post",
+            channel_key="linkedin",
+            language=ENGLISH,
             brand_profile_key="default_en",
         )
         asset.transition_to(ContentState.IN_REVIEW)
@@ -121,9 +119,9 @@ class TestContentStateMachine:
             workspace_id="ws_1",
             story_id="sty_1",
             run_id="run_1",
-            kind=ContentKind.SOCIAL_POST,
-            channel=Channel.X,
-            language=Language.AR,
+            product_key="social_post",
+            channel_key="x",
+            language=ARABIC,
             brand_profile_key="default_ar",
         )
         with pytest.raises(ValueError, match="illegal content transition"):
@@ -133,19 +131,20 @@ class TestContentStateMachine:
         assert not can_transition(ContentState.ARCHIVED, ContentState.DRAFT)
 
 
-class TestScoringWeights:
-    def test_defaults_sum_to_one(self):
-        assert pytest.approx(sum(ScoringWeights().as_dict().values())) == 1.0
+class TestScoringProfile:
+    def test_an_empty_profile_means_inherit_the_pack_default(self):
+        profile = ScoringProfile()
+        assert profile.is_empty
+        assert profile.weights == {}
 
-    def test_unbalanced_weights_are_rejected(self):
+    def test_weights_must_sum_to_one(self):
         with pytest.raises(ValidationError, match=r"must sum to 1\.0"):
-            ScoringWeights(
-                corroboration=0.9,
-                source_authority=0.9,
-                recency=0.1,
-                prominence=0.1,
-                audience_fit=0.1,
-            )
+            ScoringProfile(weights={"a": 0.9, "b": 0.9})
+
+    def test_a_balanced_profile_is_accepted(self):
+        profile = ScoringProfile(weights={"a": 0.6, "b": 0.4})
+        assert profile.weight_of("a") == 0.6
+        assert profile.weight_of("unweighted") == 0.0
 
 
 class TestContentHash:

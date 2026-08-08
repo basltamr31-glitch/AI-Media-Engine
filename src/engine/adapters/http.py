@@ -1,8 +1,15 @@
 """httpx-backed implementation of the HTTP port.
 
-This is the only module in the codebase that imports ``httpx``. Retry policy,
-timeouts and the user-agent live here, so transport behaviour is changed in one
-place rather than negotiated separately by every fetcher.
+The only implementation of the HTTP port, and the only place fetchers get their
+transport. Retry policy, timeouts and the user-agent live here, so transport
+behaviour is changed in one place rather than negotiated separately by every
+fetcher.
+
+One other module reaches for ``httpx`` directly:
+:mod:`engine.adapters.llm.ollama`. That is deliberate rather than a leak -- a
+local inference call wants a ten-minute timeout and no retries, which is the
+opposite of what fetching a web page wants, and forcing both through one
+policy would make each wrong for the other.
 """
 
 from __future__ import annotations

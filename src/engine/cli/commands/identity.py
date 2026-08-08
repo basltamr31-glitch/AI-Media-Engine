@@ -111,7 +111,7 @@ def show_account(
         spaces.add_row(
             workspace.slug,
             workspace.name,
-            ", ".join(language.value for language in workspace.languages),
+            ", ".join(workspace.languages),
         )
     console.print(spaces)
 

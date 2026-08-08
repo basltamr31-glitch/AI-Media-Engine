@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 from engine.adapters.config.schema import WorkspaceConfig
-from engine.core.domain.content import BrandProfile, ChannelSpec
+from engine.core.domain.content import BrandProfile
 
 
 class PolicyLoadError(RuntimeError):
@@ -38,7 +38,11 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 class PolicyLoader:
-    """Reads workspace, brand and channel policy from the config directory."""
+    """Reads workspace and brand policy from the config directory.
+
+    Channel definitions moved into the domain pack in milestone 1.5.5 (ADR 0015):
+    they are facts about platforms, not tenant configuration.
+    """
 
     def __init__(self, config_dir: Path) -> None:
         self._config_dir = config_dir
@@ -50,10 +54,6 @@ class PolicyLoader:
     @property
     def brand_profiles_dir(self) -> Path:
         return self._config_dir / "brand_profiles"
-
-    @property
-    def channel_specs_dir(self) -> Path:
-        return self._config_dir / "channel_specs"
 
     def load_workspace(self, slug: str) -> WorkspaceConfig:
         """Load and validate one workspace definition."""
@@ -79,21 +79,3 @@ class PolicyLoader:
         except ValueError as exc:
             msg = f"invalid brand profile {key!r}: {exc}"
             raise PolicyLoadError(msg) from exc
-
-    def load_channel_spec(self, key: str) -> ChannelSpec:
-        """Load platform constraints for one channel."""
-        payload = _read_yaml(self.channel_specs_dir / f"{key}.yaml")
-        payload.setdefault("key", key)
-        try:
-            return ChannelSpec.model_validate(payload)
-        except ValueError as exc:
-            msg = f"invalid channel spec {key!r}: {exc}"
-            raise PolicyLoadError(msg) from exc
-
-    def load_all_channel_specs(self) -> list[ChannelSpec]:
-        if not self.channel_specs_dir.is_dir():
-            return []
-        return [
-            self.load_channel_spec(path.stem)
-            for path in sorted(self.channel_specs_dir.glob("*.yaml"))
-        ]

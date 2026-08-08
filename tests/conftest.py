@@ -20,7 +20,8 @@ from engine.adapters.persistence.models import Base
 from engine.adapters.persistence.session import create_db_engine, create_session_factory
 from engine.adapters.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from engine.core.domain.account import Account, Actor
-from engine.core.domain.enums import ActorKind, Language, SourceKind
+from engine.core.domain.enums import ActorKind, SourceKind
+from engine.core.domain.language import ARABIC, ENGLISH
 from engine.core.domain.source import Source
 from engine.core.domain.workspace import Workspace
 from engine.settings import Settings
@@ -97,7 +98,7 @@ def workspace(persisted_account: Account) -> Workspace:
         slug="test-workspace",
         name="Test Workspace",
         timezone="Asia/Riyadh",
-        languages=[Language.AR, Language.EN],
+        languages=[ARABIC, ENGLISH],
     )
 
 
