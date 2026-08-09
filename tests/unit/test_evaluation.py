@@ -15,6 +15,7 @@ from engine.core.domain.evaluation import (
     check_language,
     check_length,
     check_must_include,
+    check_no_fused_words,
     check_not_copied,
     check_numbers_supported,
     evaluate,
@@ -195,3 +196,46 @@ class TestEvaluate:
         failed = [result.name for result in results if not result.passed]
         assert "language" in failed
         assert overall_score(results) < 1.0
+
+
+class TestNoFusedWords:
+    """Found by reading real output, not by design.
+
+    A live Arabic post welded the Arabic word for "art" onto the tail of
+    "financial". Every other check passed it: 78% Arabic script, nothing
+    copied, no unsupported number, length fine. Unreadable to an Arabic
+    reader and invisible to everyone else -- the same shape as the RTL bug.
+    """
+
+    def test_a_fused_word_is_caught(self):
+        result = check_no_fused_words("القطاع الفنancial يعتمد على معايير")
+
+        assert not result.passed
+        assert "الفنancial" in result.detail
+
+    def test_a_latin_product_name_in_arabic_is_fine(self):
+        """The prompt asks for product names in their original spelling."""
+        assert check_no_fused_words("نموذج MatrAIx الجديد يقدم أداء أفضل").passed
+
+    def test_clean_arabic_passes(self):
+        assert check_no_fused_words("نص عربي سليم تماما بدون أي مشاكل").passed
+
+    def test_clean_english_passes(self):
+        assert check_no_fused_words("A normal English post about AI models.").passed
+
+    def test_empty_text_passes(self):
+        assert check_no_fused_words("").passed
+
+    def test_more_fusion_scores_worse(self):
+        one = check_no_fused_words("الفنancial كلمة عادية أخرى هنا تماما")
+        two = check_no_fused_words("الفنancial والعلمtechnical كلمة أخرى هنا")
+
+        assert two.score < one.score
+
+    def test_it_is_part_of_the_suite(self):
+        """A check that exists but never runs catches nothing."""
+        case = TestEvaluate().a_case(language="ar")
+
+        names = {c.name for c in evaluate(body="x", hook="x", case=case)}
+
+        assert "no_fused_words" in names

@@ -2,10 +2,10 @@
   "model": "qwen3:1.7b",
   "prompt_version": "gen-5",
   "repeat": 9,
-  "overall": 0.9408,
+  "overall": 0.9505,
   "cases": {
     "agentic_en_x": 1.0,
-    "matraix_ar_linkedin": 0.9746,
-    "matraix_en_linkedin": 0.8478
+    "matraix_ar_linkedin": 0.9818,
+    "matraix_en_linkedin": 0.8696
   }
 }

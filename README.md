@@ -83,7 +83,7 @@ publishable posts comes out, and what those posts achieved comes back in.
 
 One honest caveat on "publication-ready". The capability is complete; the
 quality bar is not met yet on the shipped local model. Over **nine samples per
-case** it scores **0.941**, with one open failure — verbatim copying from the
+case** it scores **0.950** across seven checks, with one open failure — verbatim copying from the
 source on English LinkedIn — which is a limit of a 1.7B model rather than of
 the prompt.
 

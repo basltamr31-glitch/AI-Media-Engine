@@ -105,6 +105,30 @@ mid-sentence while its English twin finished comfortably. The failure surfaced
 as a `max_tokens` refusal rather than a truncated post, which is the intended
 behaviour.
 
+That setting is the **ceiling, not the allowance**. One number applied to every
+channel is necessarily sized for the longest, so a 280-character X post
+inherited the same 4096 tokens as a 3000-character LinkedIn post — and a model
+that rambles used all of them before the result was refused for length. The
+refusal was correct; the cost of reaching it was not.
+
+The per-call limit is therefore derived from the channel's own limit, and only
+ever *downwards*:
+
+| Channel | Characters | Tokens allowed |
+|---|---|---|
+| X | 280 | 676 |
+| Instagram | 2200 | 3556 |
+| LinkedIn | 3000 | 4096 (the configured ceiling) |
+
+Generous on purpose — 1.5 tokens per character plus overhead — for the same
+Arabic reason above. A ceiling tight enough to truncate would turn a working
+generation into a failure in exactly the language this engine exists to serve.
+Nine samples per case scored 0.942 against a 0.941 baseline with zero
+generation failures, so nothing is being cut short.
+
+The saving lands on the *failures*, which is where the waste always was: a post
+that comes in under the limit stops on its own well below any ceiling.
+
 ## Cost
 
 ```bash

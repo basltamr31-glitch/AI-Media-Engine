@@ -126,7 +126,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "ANN", "DTZ"]
+# RUF001: test fixtures are Arabic prose, and the confusable-character rule
+# flags every alef as a possible Latin "l". Real in identifiers, noise in a
+# paragraph -- and a noqa on every Arabic string would only teach people to
+# add them reflexively. The rule stays on in src/, where a confusable in an
+# identifier would actually matter.
+"tests/**" = ["S101", "ANN", "DTZ", "RUF001"]
 "migrations/**" = ["ANN", "N", "T20", "I"]
 "src/engine/cli/**" = ["T20"]
 # Developer scripts talk to a terminal and to CI logs; printing is the

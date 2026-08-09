@@ -30,6 +30,18 @@ is what makes it reasonable to run after every prompt edit.
 | `length` | Output the channel cannot accept | Character count |
 | `hook` | An empty or unpunctuated post | The hook must open the body |
 | `must_include` | Omitting the subject | Substring |
+| `no_fused_words` | One token welded from two scripts | Arabic and Latin letters inside a single word |
+
+`no_fused_words` was added last, and not by design — by reading a real Arabic
+post. It contained one token that was the Arabic word for "art" welded onto the
+tail of the English "financial", and **every other check passed it**: 78% Arabic
+script, nothing copied, no unsupported number, length fine. Unreadable to an
+Arabic speaker, invisible to everyone else — the same shape of failure as the
+RTL bug.
+
+It catches *fusion*, not fluency. The same post left "Deliverables"
+untranslated four times and contained malformed words, and no algorithmic check
+here detects that. Those need a human, which is what the review gate is for.
 
 `numbers_supported` is the one that matters most. A model that invents a
 plausible number produces output that reads perfectly and is false, which is

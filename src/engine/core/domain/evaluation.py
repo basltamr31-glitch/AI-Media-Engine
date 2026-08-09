@@ -251,6 +251,44 @@ def check_must_include(text: str, terms: list[str], *, threshold: float = 1.0) -
     )
 
 
+def check_no_fused_words(text: str, *, threshold: float = 1.0) -> CheckResult:
+    """Are any words half one script and half another?
+
+    Found by reading real output rather than by design. A live Arabic post
+    welded the Arabic word for "art" onto the tail of the English "financial",
+    producing one token that is half each -- and every other check passed it:
+    the script ratio was 78% Arabic, nothing was copied, no number was
+    unsupported, the length was fine. It is unreadable to an Arabic speaker and
+    invisible to everyone else, which is the same shape of failure the RTL bug
+    had.
+
+    A single word mixing Arabic and Latin letters with no separator is always a
+    generation artifact. Product names stay clean because they are wholly
+    Latin; the check only fires when the scripts are fused *inside* one token.
+
+    Threshold 1.0: one fused word is one too many. This does not detect bad
+    grammar or clumsy translation -- those need a human, and this file does not
+    pretend to replace one.
+    """
+    fused = [word for word in re.findall(r"\S+", text) if _is_fused(word)]
+    if not fused:
+        return CheckResult(
+            name="no_fused_words", score=1.0, threshold=threshold, detail="none found"
+        )
+    total = len(_words(text)) or 1
+    return CheckResult(
+        name="no_fused_words",
+        score=max(0.0, 1.0 - len(fused) / total),
+        threshold=threshold,
+        detail=f"{len(fused)} word(s) mix scripts: {', '.join(fused[:3])}",
+    )
+
+
+def _is_fused(word: str) -> bool:
+    """Whether one token contains letters from two of the tracked scripts."""
+    return sum(1 for pattern in _SCRIPTS.values() if pattern.search(word)) > 1
+
+
 def evaluate(
     *,
     body: str,
@@ -265,6 +303,7 @@ def evaluate(
         check_length(body, case.max_characters),
         check_hook(hook, body),
         check_must_include(body, case.must_include),
+        check_no_fused_words(body),
     ]
 
 

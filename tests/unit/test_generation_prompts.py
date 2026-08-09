@@ -188,7 +188,7 @@ class TestFirstSentence:
     def test_an_arabic_full_stop_ends_a_sentence(self):
         """A distinct code point from the Latin one, and the whole Arabic post
         would otherwise come back as a single 'sentence'."""
-        stop = "۔"  # noqa: RUF001 -- ARABIC FULL STOP, deliberately not "."
+        stop = "۔"
         body = f"أطلق المختبر نموذجًا مفتوح الأوزان{stop} ثم نشر الوصفة{stop}"
 
         assert first_sentence(body) == f"أطلق المختبر نموذجًا مفتوح الأوزان{stop}"

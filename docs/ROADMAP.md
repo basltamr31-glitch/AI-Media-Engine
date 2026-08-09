@@ -118,10 +118,17 @@ per generation, with a ceiling enforced before each call.
 
 The *bar* is not met yet, and the golden set is what says so rather than an
 impression. On the shipped local model (`qwen3:1.7b`, median of **nine**
-samples) the suite scores **0.941**, with one open failure: verbatim copying
+samples) the suite scores **0.950** across seven checks, with one open failure: verbatim copying
 from the source on English LinkedIn. Arabic never fails that check, because
 translating makes copying impossible — the failure is English-only and is a
 limit of a 1.7B model rather than of the prompt.
+
+That 0.950 is **not** an improvement on the 0.941 recorded before
+`no_fused_words` existed. Adding a seventh check that the golden cases pass
+raises the mean by arithmetic; the two numbers are computed over different
+denominators and are not comparable. The golden set never contained a fused
+word — the failure was found by reading real output, which is the argument for
+doing that as well as running the suite.
 
 Nine samples rather than three, learned the hard way: two runs of an identical
 prompt scored 0.976 and 0.821, so a three-sample comparison cannot tell a
