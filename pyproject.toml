@@ -178,6 +178,19 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# `anthropic` is an optional extra, deliberately: the engine runs on a local
+# model and must not require a paid provider's SDK to be installed. Type
+# checking therefore cannot require it either -- without this, `mypy` fails in
+# any environment that installed only `.[dev]`, which is the documented setup
+# and what CI used to do.
+#
+# This does not weaken checking where the package *is* present: mypy uses the
+# real types then, and only falls back to Any when the import genuinely cannot
+# be resolved.
+module = ["anthropic.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------

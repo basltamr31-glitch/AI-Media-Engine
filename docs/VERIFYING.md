@@ -31,12 +31,24 @@ These are the checks that must pass before any work is called complete. They
 take about four minutes in total.
 
 ```bash
-pytest                       # 1211 tests
-mypy                         # strict, 213 files, src and tests
+pytest                       # ~1200 tests
+mypy                         # strict, 213 files
 ruff check src tests         # lint
 ruff format --check src tests
 lint-imports                 # the architecture, machine-enforced
 ```
+
+**Run these inside the project's virtualenv** (`.venv`), not a system Python.
+The two differ in a way that matters: `anthropic` is an optional extra, so an
+environment that installed only `.[dev]` skips `tests/unit/test_anthropic_client.py`
+entirely and reports about ten fewer tests. That skip is correct — it is the
+extra being genuinely optional — and it is why the exact count moves.
+
+```
+SKIPPED [1] tests/unit/test_anthropic_client.py: requires the optional 'llm' extra
+```
+
+To run those too: `pip install -e ".[llm,dev]"`, which is what CI does.
 
 `lint-imports` is the unusual one and worth understanding: it fails if any layer
 imports inward-out — if the domain touched SQLAlchemy, or an adapter imported a

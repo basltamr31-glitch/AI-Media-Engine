@@ -36,8 +36,11 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # Includes the `llm` extra so the Anthropic adapter is type-checked and
+      # its tests actually run. Without it that module is skipped, and an
+      # optional provider nobody checks is one that breaks unnoticed.
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[llm,dev]"
 
       - name: Format
         run: ruff format --check src tests
@@ -67,7 +70,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[llm,dev]"
 
       # No network and no model. Every fetcher and the LLM port are behind
       # fakes, so a suite that suddenly needs egress has acquired a dependency
@@ -97,7 +100,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[llm,dev]"
 
       # `fail_under` lives in pyproject.toml, so the threshold is the same
       # number locally and here. A floor that only exists in CI is one nobody
@@ -126,7 +129,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[llm,dev]"
 
       - name: Upgrade to head
         run: engine db upgrade
@@ -158,7 +161,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[llm,dev]"
 
       # Median of three: generation is not deterministic, and a single sample
       # has been observed to swing from 0.55 to 0.98 on one unchanged case.
