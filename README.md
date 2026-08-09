@@ -194,6 +194,8 @@ How content is reviewed, published and measured:
 How plugins are discovered: [`docs/PLUGINS.md`](docs/PLUGINS.md).
 How to run it on a timer, and how to tell it is still working:
 [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+**How to check any of these claims yourself:**
+[`docs/VERIFYING.md`](docs/VERIFYING.md).
 
 To include Gmail newsletters, authorise once (see [`docs/INGESTION.md`](docs/INGESTION.md)):
 
