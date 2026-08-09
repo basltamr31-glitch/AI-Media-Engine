@@ -22,6 +22,7 @@ from engine.adapters.generation.prompts import (
     build_prompt,
     build_system,
     first_sentence,
+    token_ceiling,
 )
 from engine.core.domain.content import BrandProfile
 from engine.core.domain.evaluation import CheckResult, EvalCase, evaluate, overall_score
@@ -138,7 +139,10 @@ class EvalRunner:
                 max_characters=case.max_characters,
             ),
             model=self._model,
-            max_tokens=self._max_tokens,
+            # The same channel-derived ceiling the generate stage applies. An
+            # eval that let the model run longer than production does would be
+            # measuring a system nobody ships.
+            max_tokens=token_ceiling(case.max_characters, self._max_tokens),
             cacheable_prefix=build_cacheable_prefix(
                 brand=_brand_for(case), channel=_channel_for(case), product=_PRODUCT
             ),

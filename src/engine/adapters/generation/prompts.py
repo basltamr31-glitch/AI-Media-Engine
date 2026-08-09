@@ -96,6 +96,37 @@ def word_budget(max_characters: int) -> int:
     return max(15, int(max_characters * _LENGTH_SAFETY / _CHARS_PER_WORD))
 
 
+#: Tokens allowed per character of a channel's limit. Deliberately generous:
+#: Arabic tokenises far less efficiently than English -- frequently near one
+#: token per character -- and truncating a valid post is worse than letting a
+#: bad one run a little longer.
+_TOKENS_PER_CHARACTER: Final = 1.5
+
+#: Headroom for the JSON envelope, hashtags and the source URL, none of which
+#: are part of the body the channel limit governs.
+_TOKEN_OVERHEAD: Final = 256
+
+#: Never go below this, whatever the channel says. A ceiling tight enough to
+#: truncate would convert a working generation into a failure.
+_MIN_TOKENS: Final = 512
+
+
+def token_ceiling(max_characters: int, configured: int) -> int:
+    """How many tokens one post may take, given the channel it is for.
+
+    The configured ceiling is sized for the *longest* channel, so every short
+    one inherits it: a 280-character post was allowed 4096 tokens, and a model
+    that rambles used all of them before the result was refused for length.
+    The refusal was correct and the cost of reaching it was not -- on a free
+    local model that is 80 minutes of wall clock, and on a metered one it is
+    the same waste with an invoice.
+
+    Never raises the configured value, only lowers it where it is absurd.
+    """
+    room = int(max_characters * _TOKENS_PER_CHARACTER) + _TOKEN_OVERHEAD
+    return min(configured, max(_MIN_TOKENS, room))
+
+
 #: How much primary-source text one prompt carries. Enough for the model to
 #: have something to say, bounded so a long-read cannot blow the context window
 #: -- silent truncation of the *end* of a prompt is how a system starts writing

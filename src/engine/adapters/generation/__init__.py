@@ -13,6 +13,7 @@ from engine.adapters.generation.prompts import (
     build_cacheable_prefix,
     build_prompt,
     build_system,
+    token_ceiling,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "build_cacheable_prefix",
     "build_prompt",
     "build_system",
+    "token_ceiling",
 ]

@@ -12,7 +12,11 @@ from typing import Any
 
 import pytest
 
-from engine.adapters.generation.prompts import PROMPT_VERSION, GeneratedContent
+from engine.adapters.generation.prompts import (
+    PROMPT_VERSION,
+    GeneratedContent,
+    token_ceiling,
+)
 from engine.core.domain.content import BrandProfile, RevisionOrigin
 from engine.core.domain.enums import ActorKind, StoryStatus
 from engine.core.domain.ledger import RunLedger
@@ -461,3 +465,53 @@ class TestAccounting:
         assert "House en" in request.cacheable_prefix
         assert ARTICLE in request.prompt
         assert ARTICLE not in request.cacheable_prefix
+
+
+class TestTokenCeiling:
+    """A 280-character post was allowed 4096 tokens because the ceiling was
+    sized for the longest channel. A model that rambles used all of them
+    before the result was refused for length -- the refusal was right and the
+    cost of reaching it was not.
+    """
+
+    def test_a_tight_channel_gets_a_tight_ceiling(self):
+        assert token_ceiling(280, 4096) < 1000
+
+    def test_a_wide_channel_is_left_alone(self):
+        assert token_ceiling(3000, 4096) == 4096
+
+    def test_it_never_raises_the_configured_ceiling(self):
+        """Configuration is the budget; this only spends less of it."""
+        assert token_ceiling(99_999, 1024) == 1024
+
+    def test_a_tiny_channel_still_gets_room_to_answer(self):
+        """A ceiling tight enough to truncate turns a good post into a failure."""
+        assert token_ceiling(10, 4096) == 512
+
+    def test_the_allowance_grows_with_the_limit(self):
+        assert token_ceiling(280, 4096) < token_ceiling(2200, 4096)
+
+    def test_arabic_gets_more_tokens_than_characters(self):
+        """Arabic tokenises near one token per character; a 1:1 budget would
+        truncate exactly the language this engine exists to serve."""
+        assert token_ceiling(2000, 8192) > 2000
+
+    def test_the_stage_asks_for_the_channel_sized_ceiling(
+        self, uow, clock, settings, persisted_workspace
+    ):
+        """The wiring, not just the arithmetic."""
+        store_selected_story(uow, persisted_workspace, clock)
+        llm = answering()
+        stage = GenerateStage(
+            llm=llm,
+            pack=a_pack(),
+            brand_profiles=brands(persisted_workspace.id, "en"),
+            model="test-model",
+            max_tokens=4096,
+        )
+
+        run_stage(uow, clock, settings, persisted_workspace.id, stage)
+
+        asked = {req.metadata["channel"]: req.max_tokens for req in llm.requests}
+        assert asked["x"] < asked["linkedin"]
+        assert asked["linkedin"] == 4096

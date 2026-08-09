@@ -34,6 +34,7 @@ from engine.adapters.generation.prompts import (
     build_prompt,
     build_system,
     first_sentence,
+    token_ceiling,
 )
 from engine.core.domain.account import SYSTEM_ACTOR_KEY
 from engine.core.domain.content import BrandProfile, ContentAsset, RevisionOrigin
@@ -241,7 +242,7 @@ class GenerateStage:
                 max_characters=target.channel.max_characters,
             ),
             model=self._model,
-            max_tokens=self._max_tokens,
+            max_tokens=token_ceiling(target.channel.max_characters, self._max_tokens),
             cacheable_prefix=build_cacheable_prefix(
                 brand=target.brand, channel=target.channel, product=target.product
             ),
