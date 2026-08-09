@@ -261,14 +261,111 @@ pretending the gate is enforced everywhere.
 
 ---
 
+## Phase 6.5 — Canonical English, translated everywhere else
+
+**Status: planned. This supersedes how languages work today, and the difference
+is worth stating plainly rather than quietly amending.**
+
+The engine currently generates each language **independently** from the primary
+source. An Arabic post and an English post about the same paper are two separate
+acts of writing, not one text and its translation — which is why, in practice,
+they say different things. That was a deliberate bet: native Arabic reads
+native, translated Arabic reads translated.
+
+The bet does not survive contact with a small model. Real output shows the
+English post fluent and the Arabic post vague, with untranslated fragments
+welded into it. Composing native Arabic from a research paper is simply a harder
+task than translating good English, and only a strong model can do it.
+
+The target architecture:
+
+```
+source → English content (canonical) → translation targets → channel formatting → publish
+```
+
+- **English is the original.** It is written from the primary source, reviewed,
+  and approved. Nothing is translated from an unapproved draft.
+- **Every other language is a translation of the approved English**, carrying
+  its own brand voice for register and terminology, and re-checked against the
+  channel's limits after translation (Arabic runs longer than English and can
+  overflow a limit the English fitted).
+- **Adding a language is configuration.** A language entry plus a brand profile
+  — no engine change, no new stage, no migration.
+
+Why this is also cheaper and better: one canonical generation plus N cheap
+translations costs less than N full generations, the translation preserves the
+facts that the evidence ledger already verified, and a factual error is caught
+once in review rather than N times in N languages.
+
+What has to change: a `translate` stage between generate and render, a
+`source_language` on the workspace, and `ContentAsset` gaining a link from a
+translation back to its canonical English asset. The revision chain, review
+workflow, evidence ledger and channel rules are all unaffected.
+
+**Done when:** adding Finnish is a config file, and the Finnish post says what
+the approved English post says.
+
+---
+
 ## Phase 7 — Platform
 
 - HTTP API over the same domain
 - Multi-workspace onboarding, authentication, billing
 - Web review UI
-- Scheduled publishing
+- **Automated publishing** — one adapter per platform behind a `Publisher` port.
+  Deliberately not built earlier ([ADR 0018](adr/0018-record-publication-do-not-perform-it.md));
+  the engine records publication today. The blocker is external rather than
+  architectural: LinkedIn needs Marketing Developer Platform access, Meta needs
+  App Review for publish permissions on a Business account, and X's posting API
+  is a paid tier. Each is an application and a wait, not an afternoon.
 
 **Done when:** a customer can be onboarded without the founder in the loop.
+
+---
+
+## Backlog — agreed, not yet scheduled
+
+Recorded because they were asked for explicitly. Each says what it actually
+costs, so none of them looks cheaper than it is.
+
+### Facebook as a channel — *small*
+
+A `ChannelDef` in `packs/ai-news/pack.yaml`: character limit, hashtag policy,
+link support, format notes. **No code change** — channels are pack data, not an
+enum ([ADR 0015](adr/0015-open-vocabularies.md)). The engine generates Facebook
+posts in every configured language the moment the entry exists.
+
+### More content sources — *small to medium, already designed for*
+
+Three cases, in increasing cost:
+
+| Want | Cost |
+|---|---|
+| Another RSS feed, JSON API or newsletter | A row in the workspace YAML. No code. |
+| A new *format* on an existing transport | One parser plugin, ~100 lines ([ADR 0017](adr/0017-plugin-discovery.md)). |
+| A new *transport* (Telegram, Discord, a database) | One fetcher plugin. Still no engine change. |
+
+The engine has never known the word "TLDR": it has an email transport and a
+parser key. Swapping the whole subject — AI news to cybersecurity — is
+`pack_key` in the workspace config.
+
+### Instagram Reels from a template — *large; genuinely new infrastructure*
+
+The honest one. The pack already declares `reel_script` and `image_prompt`
+products, so the text side has a home. Nothing else exists:
+
+- A video renderer (ffmpeg or MoviePy) — a binary dependency this project has
+  so far avoided
+- Template definition: layers, timing, fonts, safe areas
+- **Arabic text shaping in video**, which is materially harder than in HTML and
+  is the risky part
+- Optional voiceover (TTS)
+- Media storage — the engine stores text and JSON today, not megabytes of video
+- Publishing Reels through the Graph API, a separate endpoint with its own rules
+
+It fits the architecture — a `reel` stage after approval, writing an `.mp4` —
+but it is comparable in size to a whole phase, and `docs/ARCHITECTURE.md` lists
+video rendering under what is deliberately absent.
 
 ---
 
