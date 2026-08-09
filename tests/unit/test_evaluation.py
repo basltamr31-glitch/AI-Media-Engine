@@ -217,6 +217,31 @@ class TestNoFusedWords:
         """The prompt asks for product names in their original spelling."""
         assert check_no_fused_words("نموذج MatrAIx الجديد يقدم أداء أفضل").passed
 
+    def test_an_arabic_comma_after_a_latin_word_is_not_fusion(self):
+        """U+060C lives in the Arabic block and is not a letter.
+
+        The first version of this check read the whole Arabic block and so
+        called `MatrAIx،` a fused word. Three of its five hits on real output
+        were this.
+        """
+        assert check_no_fused_words("نموذج MatrAIx، ثم غيره").passed
+        assert check_no_fused_words("معيار CycleBench، ونتائجه").passed
+        assert check_no_fused_words("استخدام (RGRC)، ثم التحقق").passed
+
+    def test_an_arabic_proclitic_on_a_proper_noun_is_not_fusion(self):
+        """`وClaude` is "and Claude"; `للNSF` is "for the NSF".
+
+        Ordinary Arabic orthography, not damage. The tell for a real fusion is
+        Latin continuing in lowercase -- the tail of a word the model lost
+        control of.
+        """
+        assert check_no_fused_words("تعاون مع وClaude في المشروع").passed
+        assert check_no_fused_words("تمويل للNSF هذا العام").passed
+
+    def test_a_lowercase_latin_tail_after_arabic_is_fusion(self):
+        """The real second case, from a live post: يsimulate."""
+        assert not check_no_fused_words("النموذج يsimulate المستخدمين").passed
+
     def test_clean_arabic_passes(self):
         assert check_no_fused_words("نص عربي سليم تماما بدون أي مشاكل").passed
 

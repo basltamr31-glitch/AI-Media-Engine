@@ -43,6 +43,20 @@ It catches *fusion*, not fluency. The same post left "Deliverables"
 untranslated four times and contained malformed words, and no algorithmic check
 here detects that. Those need a human, which is what the review gate is for.
 
+The first version of the check was **wrong**, and running it over 26 real
+assets is what showed it: 5 hits, 3 of them false.
+
+| Flagged | Verdict |
+|---|---|
+| `الفنancial`, `يsimulate` | Real fusion — Latin continues in lowercase |
+| `MatrAIx،`, `CycleBench،`, `(RGRC)،` | Arabic **comma** U+060C, which is punctuation, not a letter |
+| `وClaude`, `للNSF` | Arabic proclitics — "and Claude", "for the NSF" — ordinary orthography |
+
+So punctuation is stripped before comparing, and a capitalised Latin run is left
+alone: a writer attaches a prefix to a proper noun, whereas a model that loses
+control of a word continues in lowercase. Genuine incidence across the same 26
+assets is **1**, not 5 — and all of them Arabic, none English.
+
 `numbers_supported` is the one that matters most. A model that invents a
 plausible number produces output that reads perfectly and is false, which is
 the failure a human reviewer is least likely to catch. It is deliberately

@@ -34,6 +34,19 @@ from pydantic import Field
 from engine.core.domain.base import DomainModel, ImmutableModel
 from engine.core.domain.language import base_language
 
+#: Arabic *letters* only, excluding U+060C-U+061F punctuation. ``_SCRIPTS``
+#: covers the whole block, which is right for measuring how much of a post is
+#: Arabic and wrong for asking whether one word fuses two scripts: a Latin
+#: product name followed by an Arabic comma is not a fused word.
+_ARABIC_LETTERS: Final = re.compile(r"[ء-ٰٟ-ۓۺ-ۿ]")
+
+#: Anything that is not a letter or a digit in either script. Stripped before
+#: comparing, so trailing punctuation cannot make a clean word look mixed.
+_PUNCTUATION: Final = re.compile(r"[^\wء-ٰٟ-ۓۺ-ۿ]", re.UNICODE)
+
+#: Consecutive Latin letters, used to ask whether a run starts capitalised.
+_LATIN_RUNS: Final = re.compile(r"[A-Za-zÀ-ɏ]+")
+
 #: Unicode ranges sufficient to tell the scripts this engine writes apart.
 #: Not a general script detector -- it answers "is this the alphabet we asked
 #: for?", which is a much easier question than "what language is this?".
@@ -262,9 +275,18 @@ def check_no_fused_words(text: str, *, threshold: float = 1.0) -> CheckResult:
     invisible to everyone else, which is the same shape of failure the RTL bug
     had.
 
-    A single word mixing Arabic and Latin letters with no separator is always a
-    generation artifact. Product names stay clean because they are wholly
-    Latin; the check only fires when the scripts are fused *inside* one token.
+    Two kinds of mixing are **not** artifacts, and the first version of this
+    check flagged both. Run over 26 real assets it reported 5 failures, of which
+    3 were wrong:
+
+    * **Arabic punctuation on a Latin word.** ``MatrAIx``, ``CycleBench`` and
+      ``(RGRC)`` were followed by the Arabic comma U+060C, which lives in the
+      Arabic block but is not a letter. Punctuation is stripped before the
+      comparison.
+    * **Arabic proclitics on a proper noun.** ``وClaude`` ("and Claude") and
+      ``للNSF`` ("for the NSF") are ordinary Arabic orthography, not damage.
+      A genuine fusion continues into *lowercase* Latin -- the tail of a word
+      the model lost control of -- so a capitalised Latin part is left alone.
 
     Threshold 1.0: one fused word is one too many. This does not detect bad
     grammar or clumsy translation -- those need a human, and this file does not
@@ -285,8 +307,21 @@ def check_no_fused_words(text: str, *, threshold: float = 1.0) -> CheckResult:
 
 
 def _is_fused(word: str) -> bool:
-    """Whether one token contains letters from two of the tracked scripts."""
-    return sum(1 for pattern in _SCRIPTS.values() if pattern.search(word)) > 1
+    """Whether one token is a Latin word with Arabic welded into it.
+
+    Deliberately narrow. The question is not "does this token contain two
+    scripts" -- Arabic punctuation and proclitics both do that legitimately --
+    but "did the model lose control of a word part-way through", and the tell
+    for that is Latin text continuing in lowercase after Arabic letters.
+    """
+    stripped = _PUNCTUATION.sub("", word)
+    if not (_ARABIC_LETTERS.search(stripped) and _SCRIPTS["latin"].search(stripped)):
+        return False
+    # A capitalised Latin run is a proper noun the writer attached a prefix to;
+    # a lowercase one is the tail of a word that came apart.
+    return any(
+        run[0].islower() for run in _LATIN_RUNS.findall(stripped) if run and run[0].isalpha()
+    )
 
 
 def evaluate(
